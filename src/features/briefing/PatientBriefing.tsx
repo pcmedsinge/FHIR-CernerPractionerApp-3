@@ -118,13 +118,22 @@ export function PatientBriefing() {
   const news2High = data.riskScores.news2 && data.riskScores.news2.total >= 7
 
   return (
-    <div className="flex flex-col h-[calc(100vh-90px)]">
+    <div className="flex flex-col gap-2">
       {/* ════════════════════════════════════════════════════════════════
-          STICKY COMMAND CENTER — always visible, never scrolls away
+          NEWS2 EMERGENCY — sticky, stays visible while scrolling
           ════════════════════════════════════════════════════════════════ */}
-      <div className="shrink-0 flex flex-col gap-2 pb-2 bg-surface z-10">
-        {/* ── NEWS2 Emergency Banner ─────────────────────────────────── */}
-        {news2High && <NEWS2Banner news2={data.riskScores.news2!} />}
+      {news2High && (
+        <div className="sticky top-0 z-20">
+          <NEWS2Banner news2={data.riskScores.news2!} />
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════
+          COMMAND CENTER — all content scrolls naturally
+          ════════════════════════════════════════════════════════════════ */}
+      <div className="flex flex-col gap-2">
+        {/* ── NEWS2 Emergency Banner ─────────────────────────────────────── */}
+        {/* (handled above as sticky) */}
 
         {/* ── Action bar (compact) ───────────────────────────────────── */}
         <ActionBar
@@ -146,9 +155,9 @@ export function PatientBriefing() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════════
-          EXPLORE ZONE — scrollable secondary content
+          EXPLORE ZONE — continues in the same scroll flow
           ════════════════════════════════════════════════════════════════ */}
-      <div className="flex-1 overflow-y-auto flex flex-col gap-3 pt-3 min-h-0">
+      <div className="flex flex-col gap-3">
         {/* ── Lab Sparklines ─────────────────────────────────────────── */}
         {data.labTrends.length > 0 && (
           <section className="flex flex-col gap-1.5">
@@ -190,7 +199,7 @@ export function PatientBriefing() {
 
 function NEWS2Banner({ news2 }: { news2: NEWS2Result }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-red-600 text-white rounded-lg animate-pulse">
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-red-600 to-red-500 text-white rounded-xl shadow-[0_2px_8px_rgba(220,38,38,0.35)] animate-pulse">
       <span className="text-2xl"><IconAlert size={24} /></span>
       <div className="flex-1">
         <span className="text-sm font-bold">
@@ -262,7 +271,7 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
   // Still loading Tier 2 — show prominent "analyzing" indicator
   if (tier2Loading && data.insights.length === 0 && !data.aiError) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
+      <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-blue-100/60 border border-blue-200 rounded-xl shadow-card">
         <div className="w-5 h-5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spinner shrink-0" />
         <div className="flex flex-col gap-0.5">
           <span className="text-sm font-semibold text-blue-900">Analyzing clinical data…</span>
@@ -275,7 +284,7 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
   // AI error
   if (data.aiError && data.insights.length === 0 && !data.allClear) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+      <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl shadow-card">
         <span className="text-sm"><IconWarning size={16} /></span>
         <p className="text-xs text-amber-800 m-0">AI unavailable: {data.aiError}</p>
       </div>
@@ -285,7 +294,7 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
   // All Clear
   if (data.allClear && data.insights.length === 0) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+      <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-xl shadow-card">
         <span className="text-sm text-green-600"><IconCheckCircle size={16} /></span>
         <p className="text-xs text-green-800 m-0 font-medium">
           No critical alerts
@@ -319,7 +328,7 @@ function RiskScoresBar({ data }: { data: BriefingData }) {
 
   if (!hasAnyScore) {
     return (
-      <div className="px-3 py-1.5 bg-slate-50 border border-card-border rounded-lg text-slate-400 text-[11px] text-center">
+      <div className="px-3 py-1.5 bg-slate-50 border border-card-border rounded-xl text-slate-400 text-[11px] text-center shadow-card">
         Record vitals to enable risk scoring
       </div>
     )
@@ -345,7 +354,7 @@ function RiskTile({ label, value, color, sub }: { label: string; value: string; 
   const c = RISK_COLORS[color]
   const isAlert = color === 'red'
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${c.bg} ${c.border} ${isAlert ? 'animate-pulse' : ''}`}>
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border ${c.bg} ${c.border} shadow-card ${isAlert ? 'animate-pulse' : ''}`}>
       <div className="flex flex-col items-start">
         <span className={`text-[10px] font-bold uppercase tracking-wider ${c.text}`}>{label}</span>
         <span className={`text-xs ${c.text} leading-tight`}>{sub}</span>
@@ -375,7 +384,7 @@ const COMPACT_VITALS: Array<{
 function CompactVitals({ data }: { data: BriefingData }) {
   if (!data.hasVitals) {
     return (
-      <div className="px-3 py-1.5 bg-slate-50 border border-card-border rounded-lg text-slate-400 text-[11px] italic text-center">
+      <div className="px-3 py-1.5 bg-slate-50 border border-card-border rounded-xl text-slate-400 text-[11px] italic text-center shadow-card">
         No vitals recorded
       </div>
     )
@@ -402,7 +411,7 @@ function CompactVitals({ data }: { data: BriefingData }) {
         return (
           <div
             key={v.key}
-            className={`flex flex-col items-center gap-0 py-1.5 px-1 border rounded-lg ${bg} ${pulse} ${value == null ? 'opacity-40' : ''}`}
+            className={`flex flex-col items-center gap-0 py-1.5 px-1 border rounded-xl shadow-card ${bg} ${pulse} ${value == null ? 'opacity-40' : ''}`}
           >
             <span className={`flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide ${status === 'critical' ? 'text-red-600' : status === 'warning' ? 'text-amber-600' : 'text-slate-600'}`}><VitalIcon size={12} />{v.label}</span>
             <span className={`text-xl font-black leading-tight ${textColor}`}>{value ?? '—'}</span>
@@ -428,7 +437,7 @@ function VitalsAccordion({
   onVitalsRecorded: () => void
 }) {
   return (
-    <section className="border border-card-border rounded-lg overflow-hidden">
+    <section className="border border-card-border rounded-xl overflow-hidden shadow-card">
       <button
         type="button"
         className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 text-left cursor-pointer hover:bg-slate-100 transition-colors duration-150 border-0"
@@ -465,23 +474,27 @@ function VitalsAccordion({
 
 function DataQualityFooter({ data }: { data: BriefingData }) {
   if (!data.summaryMeta) return null
-  const { summaryMeta, tokenUsage, aiError } = data
+  const { summaryMeta, aiError } = data
   const hasErrors = summaryMeta.errors.length > 0
 
+  // Minimal: status dot + time + optional error hint
+  const dotColor = hasErrors || aiError
+    ? 'bg-amber-400'
+    : summaryMeta.populatedCategories >= 4
+      ? 'bg-green-400'
+      : 'bg-slate-300'
+
   return (
-    <div className="flex flex-col gap-0.5 text-[10px] text-slate-400 border-t border-card-border pt-2 pb-1">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span>{summaryMeta.populatedCategories}/5 categories</span>
-        <span>·</span>
-        <span>{new Date(summaryMeta.fetchedAt).toLocaleTimeString()}</span>
-        {tokenUsage && <><span>·</span><span>{tokenUsage.total} tokens</span></>}
-      </div>
+    <div className="flex items-center gap-2 text-[10px] text-slate-400 pt-1 pb-0.5">
+      <span className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0`} />
+      <span>{summaryMeta.populatedCategories}/5 data</span>
+      <span className="text-slate-300">·</span>
+      <span>{new Date(summaryMeta.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
       {hasErrors && (
-        <div className="flex items-center gap-1 text-amber-500">
-          <IconWarning size={12} /> {summaryMeta.errors.map(e => e.split(':')[0]).join(', ')} failed
-        </div>
+        <span className="text-amber-500">
+          · {summaryMeta.errors.length} fetch error{summaryMeta.errors.length > 1 ? 's' : ''}
+        </span>
       )}
-      {aiError && !tokenUsage && <div className="text-amber-500">{aiError}</div>}
     </div>
   )
 }

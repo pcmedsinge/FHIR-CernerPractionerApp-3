@@ -1,7 +1,7 @@
 import { useAuth } from './auth/AuthProvider'
 import { hasSmartLaunchParams } from './auth/launch'
 import { AppShell } from './components/AppShell'
-import { PatientBanner } from './components/PatientBanner'
+import { usePatientContext } from './components/PatientBanner'
 import { PatientBriefing } from './features/briefing/PatientBriefing'
 
 function App() {
@@ -41,9 +41,15 @@ function App() {
     )
   }
 
+  return <AuthenticatedApp />
+}
+
+/** Authenticated shell — uses hooks that depend on session context */
+function AuthenticatedApp() {
+  const { headerLabel } = usePatientContext()
+
   return (
-    <AppShell title="PractitionerHub" subtitle="SMART session established">
-      <PatientBanner />
+    <AppShell title="PractitionerHub" patientLabel={headerLabel ?? undefined}>
       <PatientBriefing />
     </AppShell>
   )

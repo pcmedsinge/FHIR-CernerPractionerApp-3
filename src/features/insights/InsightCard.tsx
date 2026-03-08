@@ -42,7 +42,7 @@ export function InsightCard({ insight }: { insight: ClinicalInsight }) {
 
   return (
     <div
-      className={`border border-card-border border-l-4 ${style.border} ${style.bg} rounded-lg overflow-hidden transition-all duration-150`}
+      className={`border border-card-border border-l-4 ${style.border} ${style.bg} rounded-xl shadow-card overflow-hidden transition-all duration-150`}
     >
       {/* Header — always visible, clickable to expand */}
       <button

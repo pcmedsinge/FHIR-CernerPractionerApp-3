@@ -29,12 +29,12 @@ interface PatientResource {
 
 function calculateAge(birthDate?: string): string {
 	if (!birthDate) {
-		return 'Unknown age'
+		return '?y'
 	}
 
 	const birth = new Date(birthDate)
 	if (Number.isNaN(birth.getTime())) {
-		return 'Unknown age'
+		return '?y'
 	}
 
 	const today = new Date()
@@ -72,13 +72,28 @@ function extractMrn(resource: PatientResource | null): string {
 	}
 
 	const bySystemHint = identifiers.find((item) => item.system?.toLowerCase().includes('mrn'))
-	return bySystemHint?.value ?? 'Unavailable'
+	return bySystemHint?.value ?? ''
 }
 
-export function PatientBanner() {
+// ---------------------------------------------------------------------------
+// Hook — provides patient context data for header label
+// ---------------------------------------------------------------------------
+
+export interface PatientContext {
+	loading: boolean
+	error: string | null
+	displayName: string
+	age: string
+	gender: string
+	mrn: string
+	/** Compact one-line label for inline display: "SMART, Joe · 42y M · MRN 12345" */
+	headerLabel: string | null
+}
+
+export function usePatientContext(): PatientContext {
 	const { session } = useAuth()
 	const patientId = session?.patientId ?? null
-	const shouldShowBanner = Boolean(session?.needPatientBanner && patientId)
+	const shouldLoad = Boolean(session?.needPatientBanner && patientId)
 
 	const [patient, setPatient] = useState<PatientResource | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -88,7 +103,7 @@ export function PatientBanner() {
 		const accessToken = session?.accessToken ?? ''
 		const resolvedPatientId = patientId ?? ''
 
-		if (!shouldShowBanner || !resolvedPatientId || !accessToken) {
+		if (!shouldLoad || !resolvedPatientId || !accessToken) {
 			setPatient(null)
 			setError(null)
 			setLoading(false)
@@ -144,33 +159,30 @@ export function PatientBanner() {
 		return () => {
 			active = false
 		}
-	}, [shouldShowBanner, patientId, session?.accessToken])
+	}, [shouldLoad, patientId, session?.accessToken])
 
 	const displayName = useMemo(() => extractDisplayName(patient), [patient])
-	const birthDate = patient?.birthDate ?? 'Unknown DOB'
 	const age = useMemo(() => calculateAge(patient?.birthDate), [patient?.birthDate])
-	const gender = patient?.gender ? patient.gender.toUpperCase() : 'UNKNOWN'
+	const gender = patient?.gender ? patient.gender.charAt(0).toUpperCase() : '?'
 	const mrn = useMemo(() => extractMrn(patient), [patient])
 
-	if (!shouldShowBanner) {
-		return null
-	}
+	const headerLabel = useMemo(() => {
+		if (!shouldLoad) return null
+		if (loading) return 'Loading patient…'
+		if (error) return 'Patient unavailable'
+		const parts = [displayName, `${age} ${gender}`]
+		if (mrn) parts.push(`MRN ${mrn}`)
+		return parts.join(' · ')
+	}, [shouldLoad, loading, error, displayName, age, gender, mrn])
 
-	if (loading) {
-		return <div className="shrink-0 px-5 py-3.5 bg-slate-700 text-white text-sm">Loading patient context...</div>
-	}
+	return { loading, error, displayName, age, gender, mrn, headerLabel }
+}
 
-	if (error) {
-		return <div className="shrink-0 px-5 py-3.5 bg-red-900 text-white text-sm">Patient banner unavailable: {error}</div>
-	}
+// ---------------------------------------------------------------------------
+// Legacy component — kept for backward compat but now a no-op
+// (Patient info is shown in the unified header via usePatientContext)
+// ---------------------------------------------------------------------------
 
-	return (
-		<div className="shrink-0 flex flex-wrap gap-4 items-center px-5 py-2.5 bg-slate-900 text-white text-sm">
-			<span><strong>{displayName}</strong></span>
-			<span>DOB: {birthDate}</span>
-			<span>Age: {age}</span>
-			<span>Gender: {gender}</span>
-			<span>MRN: {mrn}</span>
-		</div>
-	)
+export function PatientBanner() {
+	return null
 }

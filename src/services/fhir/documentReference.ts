@@ -24,19 +24,19 @@ export interface SaveNoteResult {
 interface DocumentReferenceResource {
   resourceType: 'DocumentReference'
   status: 'current'
+  docStatus: 'preliminary' | 'final' | 'amended'
   type: {
     coding: Array<{
       system: string
       code: string
       display: string
+      userSelected?: boolean
     }>
+    text: string
   }
   subject: { reference: string }
   date: string
-  author?: Array<{ reference: string }>
-  context?: {
-    encounter?: Array<{ reference: string }>
-  }
+  author: Array<{ reference: string }>
   content: Array<{
     attachment: {
       contentType: string
@@ -45,7 +45,11 @@ interface DocumentReferenceResource {
       creation: string
     }
   }>
-  description: string
+  context?: {
+    encounter?: Array<{ reference: string }>
+    period?: { start: string; end: string }
+  }
+  description?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -79,38 +83,53 @@ export async function saveNoteAsDocumentReference(
       handoff: 'SBAR Handoff Note',
     }
 
+    const noteTitle = formatLabels[noteFormat] ?? 'Clinical Note'
+
+    // Cerner requires: docStatus, type.text, author, context.period
+    // Type coding uses Cerner codeSet/72 — '2820507' = "Admission Note Physician"
+    // is a commonly available code on this tenant.
     const resource: DocumentReferenceResource = {
       resourceType: 'DocumentReference',
       status: 'current',
+      docStatus: 'final',
       type: {
         coding: [{
-          system: 'http://loinc.org',
-          code: '11506-3',
-          display: 'Progress note',
+          system: `https://fhir.cerner.com/${import.meta.env.VITE_CERNER_TENANT_ID ?? 'ec2458f2-1e24-41c8-b71b-0e701af7583d'}/codeSet/72`,
+          code: '2820507',
+          display: 'Admission Note Physician',
+          userSelected: true,
         }],
+        text: noteTitle,
       },
       subject: { reference: `Patient/${patientId}` },
       date: now,
+      author: [{ reference: `Practitioner/${practitionerId ?? '0'}` }],
       content: [{
         attachment: {
-          contentType: 'text/plain',
-          data: btoa(unescape(encodeURIComponent(noteContent))),
-          title: formatLabels[noteFormat] ?? 'Clinical Note',
+          contentType: 'application/xml;charset=utf-8',
+          data: btoa(unescape(encodeURIComponent(
+            `<html><title>${noteTitle}</title><body><pre>${noteContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre></body></html>`
+          ))),
+          title: noteTitle,
           creation: now,
         },
       }],
-      description: `AI-assisted ${formatLabels[noteFormat] ?? 'Clinical Note'} — PractitionerHub`,
+      description: `AI-assisted ${noteTitle} — PractitionerHub`,
     }
 
-    // Optional references
-    if (practitionerId) {
-      resource.author = [{ reference: `Practitioner/${practitionerId}` }]
-    }
+    // Encounter + period context
     if (encounterId) {
       resource.context = {
         encounter: [{ reference: `Encounter/${encounterId}` }],
+        period: { start: now, end: now },
+      }
+    } else {
+      resource.context = {
+        period: { start: now, end: now },
       }
     }
+
+    console.debug('[DocumentReference] POST payload:', JSON.stringify(resource, null, 2))
 
     const created = await fhirFetch<{ id?: string }>('DocumentReference', accessToken, {
       method: 'POST',
@@ -123,16 +142,35 @@ export async function saveNoteAsDocumentReference(
       error: null,
     }
   } catch (err) {
-    // Check for scope/permission errors — expected in sandbox
-    if (err instanceof FhirHttpError && (err.status === 401 || err.status === 403)) {
+    // Surface full details for any FHIR error
+    if (err instanceof FhirHttpError) {
+      console.error(`[DocumentReference] FHIR ${err.status} error:`, {
+        status: err.status,
+        statusText: err.statusText,
+        diagnostics: err.diagnostics,
+        operationOutcome: err.operationOutcome,
+      })
+
+      // Scope/permission errors — expected in sandbox
+      if (err.status === 401 || err.status === 403) {
+        return {
+          success: false,
+          documentId: null,
+          error: 'DocumentReference write not authorized — note saved locally. Add DocumentReference.write scope for EHR persistence.',
+        }
+      }
+
+      // Validation errors (422) — Cerner rejected the payload
+      const detail = err.diagnostics ?? err.operationOutcome?.slice(0, 500) ?? err.statusText
       return {
         success: false,
         documentId: null,
-        error: 'DocumentReference write not authorized — note saved locally. Add DocumentReference.write scope for EHR persistence.',
+        error: `FHIR ${err.status}: ${detail}`,
       }
     }
 
     const message = err instanceof Error ? err.message : String(err)
+    console.error('[DocumentReference] Unexpected error:', err)
     return {
       success: false,
       documentId: null,

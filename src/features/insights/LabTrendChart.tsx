@@ -80,7 +80,7 @@ export function LabTrendChart({ trend }: { trend: LabTrend }) {
   const refY2 = refLow != null ? SPAD + chartH - ((refLow - yMin) / (yMax - yMin)) * chartH : SPAD + chartH
 
   return (
-    <div className={`flex items-center gap-2.5 px-2.5 py-2 border rounded-lg ${bgClass}`}>
+    <div className={`flex items-center gap-2.5 px-2.5 py-2 border rounded-xl shadow-card ${bgClass}`}>
       {/* Lab info */}
       <div className="flex flex-col min-w-0 shrink-0 gap-0.5">
         <div className="flex items-center gap-1.5">

@@ -14,19 +14,39 @@ export class FhirHttpError extends Error {
   readonly status: number
   readonly statusText: string
   readonly operationOutcome: string | undefined
+  /** Parsed diagnostics from OperationOutcome (if any) */
+  readonly diagnostics: string | undefined
 
   constructor(status: number, statusText: string, operationOutcome?: string) {
-    super(
+    // Try to extract diagnostics from OperationOutcome JSON
+    let diagnostics: string | undefined
+    if (operationOutcome) {
+      try {
+        const oo = JSON.parse(operationOutcome) as {
+          issue?: Array<{ severity?: string; diagnostics?: string; details?: { text?: string } }>
+        }
+        if (oo.issue && oo.issue.length > 0) {
+          diagnostics = oo.issue
+            .map(i => i.diagnostics ?? i.details?.text ?? `${i.severity ?? 'error'}`)
+            .join('; ')
+        }
+      } catch { /* not JSON — keep raw */ }
+    }
+
+    const baseMsg =
       status === 401
         ? 'Session expired — please re-launch the app from the EHR.'
         : status === 403
           ? 'Insufficient permissions — the required FHIR scope may not be registered.'
-          : `FHIR request failed (${status} ${statusText})`,
-    )
+          : `FHIR request failed (${status} ${statusText})`
+
+    super(diagnostics ? `${baseMsg}: ${diagnostics}` : baseMsg)
+
     this.name = 'FhirHttpError'
     this.status = status
     this.statusText = statusText
     this.operationOutcome = operationOutcome
+    this.diagnostics = diagnostics
   }
 }
 

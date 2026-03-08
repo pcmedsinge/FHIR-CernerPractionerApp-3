@@ -38,20 +38,20 @@
   - Target Date: TBD
   - Notes: Simplified from multi-patient Command Center to single-patient clinical dashboard
 - **Phase 3 — AI Insights (Clinical Decision Assistant)**
-  - Status: Not Started
+  - Status: Complete
   - Owner: TBD
   - Target Date: TBD
   - Notes: —
 - **Phase 4 — Smart Notes (Documentation Assistant)**
-  - Status: Not Started
+  - Status: Complete
   - Owner: TBD
   - Target Date: TBD
-  - Notes: —
+  - Notes: Save to EHR working (DocumentReference POST). Formats: SOAP, A/P, SBAR.
 - **Phase 5 — Polish, Integration & End-to-End Testing**
-  - Status: Not Started
+  - Status: In Progress
   - Owner: TBD
   - Target Date: TBD
-  - Notes: —
+  - Notes: Header consolidation, visual language upgrade, footer cleanup — done
 
 ---
 
