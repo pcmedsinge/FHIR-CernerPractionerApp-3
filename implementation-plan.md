@@ -18,20 +18,25 @@
 ## Phase Tracking Board
 
 - **Phase 0 — Project Scaffolding & Data Seeding**
-  - Status: Not Started
+  - Status: Complete
   - Owner: TBD
   - Target Date: TBD
   - Notes: —
 - **Phase 1 — SMART Auth + A.1 Must-Haves**
-  - Status: Not Started
+  - Status: Complete
   - Owner: TBD
   - Target Date: TBD
-  - Notes: —
-- **Phase 2 — Dashboard (Command Center + Risk Scores)**
-  - Status: Not Started
+  - Notes: 7/9 vitals create working (HR/RR blocked by Cerner sandbox scope limitation)
+- **Phase 1.5 — Tailwind CSS Full Migration**
+  - Status: Complete
+  - Owner: TBD
+  - Target Date: 2026-03-08
+  - Notes: Tailwind v4 activated via @tailwindcss/vite plugin. All components migrated from hand-written App.css (1426 lines) to Tailwind utilities. App.css deleted. Theme tokens configured in index.css @theme block.
+- **Phase 2 — Dashboard (Single-Patient Clinical Dashboard + Risk Scores)**
+  - Status: Complete
   - Owner: TBD
   - Target Date: TBD
-  - Notes: —
+  - Notes: Simplified from multi-patient Command Center to single-patient clinical dashboard
 - **Phase 3 — AI Insights (Clinical Decision Assistant)**
   - Status: Not Started
   - Owner: TBD
@@ -89,12 +94,16 @@ Use these canonical fixtures for deterministic verification across phases.
    ```bash
    npm install fhirclient @types/fhir tailwindcss @tailwindcss/vite react-router-dom
    ```
-3. Configure Tailwind CSS with medical-grade design system:
-   - Color palette: clinical blues (`#1e40af`, `#3b82f6`), greens (`#16a34a`),
-     severity reds (`#dc2626`), yellows (`#f59e0b`), neutral grays
+3. Configure Tailwind CSS v4 with medical-grade design system:
+   - ✅ **Activated**: `@tailwindcss/vite` plugin in `vite.config.ts`, `@import "tailwindcss"` in `src/index.css`
+   - ✅ **Theme tokens** in `src/index.css` `@theme` block (CSS-based config, NOT tailwind.config.js):
+     - Colors: `--color-status-normal: #16a34a`, `--color-status-warning: #f59e0b`, `--color-status-critical: #dc2626`, `--color-accent: #2563eb`, `--color-surface: #f1f5f9`, `--color-card: #ffffff`, `--color-card-border: #e2e8f0`
+     - Shadows: `--shadow-card`, `--shadow-card-hover`, `--shadow-modal`, `--shadow-toast`
+     - Animations: `--animate-shimmer`, `--animate-spinner`, `--animate-modal-in`, `--animate-toast-in`, `--animate-toast-out`, `--animate-save-in`
+   - ✅ Custom CSS classes in `@layer components` (not expressible as pure utilities): `dialog.modal-backdrop`, `.vital-status-bar`, `.skeleton-gradient`
    - Typography: Inter font family (or system font stack)
-   - Shared component tokens: card radius, shadow levels, badge sizes
    - Layout: `h-screen` based, `overflow-hidden` globally
+   - **Rule**: All new UI must use Tailwind utility classes. No new CSS files.
 
 ### 0.2 Project Structure
 ```
@@ -182,20 +191,20 @@ Create `scripts/seed-data.ts`:
 - Uses authenticated FHIR client with `user/` scopes
 - POSTs realistic Observations (vitals + labs) to patients with sparse data
 - Creates Encounter resources linking practitioners to patients
-- Seeds 2-3 Appointments per patient (for future v2 scheduling)
+- Optional: seed 2-3 Appointments per patient for future v2 scheduling; not required for Phase 0/Phase 1 gate
 - Target patients: Joe, Fredrick, Nancy, Wilma, Hailey, Valerie
 - Idempotent: checks existing data before creating duplicates
 - Includes mandatory write smoke test for `Observation` create/read-back (A.1 requirement gate)
 - Records smoke test result log; Phase 1 cannot start until write smoke test passes
 
 ### 0.5 Verification Criteria
-- [ ] `npm run dev` starts without errors on `http://127.0.0.1:5173`
-- [ ] Tailwind classes render correctly
-- [ ] Project structure matches above layout
-- [ ] `.env` populated with all Section B values
-- [ ] TypeScript strict mode enabled, no `any` types
-- [ ] Cerner app scope registration is complete (all scopes listed in `agent.md`) before Phase 1 entry
-- [ ] Observation write smoke test passes in Cerner sandbox (create + verify retrieval)
+- [x] `npm run dev` starts without errors on `http://127.0.0.1:5173`
+- [x] Tailwind classes render correctly (v4 via `@tailwindcss/vite` + `@import "tailwindcss"`)
+- [x] Project structure matches above layout
+- [x] `.env` populated with all Section B values
+- [x] TypeScript strict mode enabled, no `any` types
+- [x] Cerner app scope registration is complete (all scopes listed in `agent.md`) before Phase 1 entry
+- [x] Observation write smoke test passes in Cerner sandbox (create + verify retrieval)
 
 ---
 
@@ -346,28 +355,131 @@ Implementation:
 **File**: `src/services/fhir/observations.ts`
 
 `createVitalSign(patientId, vitalType, value, unit, dateTime)` method:
-1. Constructs FHIR `Observation` resource:
+1. Constructs FHIR `Observation` resource per **Cerner's documented requirements** (see agent.md § "Cerner FHIR Observation API Reference"):
+   - **`category[0].text`**: MUST include `"Vital Signs"` — Cerner rejects without it (422).
+   - **`code.text`**: MUST include the LOINC display name — Cerner rejects without it (422).
+   - **`encounter`**: Include `Encounter/{id}` from SMART launch context when available — required for proper indexing/pairing.
+   - **`issued`**: Set to current timestamp (when filed), distinct from `effectiveDateTime` (when measured).
+   - **`identifier`**: Include a unique identifier to prevent 409 Conflict from Cerner duplicate detection.
+   - **`performer`**: Include `Practitioner/{id}` when available from auth context.
    ```json
    {
      "resourceType": "Observation",
      "status": "final",
-     "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs" }] }],
-     "code": { "coding": [{ "system": "http://loinc.org", "code": "<LOINC>", "display": "<name>" }] },
+     "category": [{
+       "coding": [{
+         "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+         "code": "vital-signs",
+         "display": "Vital Signs"
+       }],
+       "text": "Vital Signs"
+     }],
+     "code": {
+       "coding": [{ "system": "http://loinc.org", "code": "<LOINC>", "display": "<name>" }],
+       "text": "<display name>"
+     },
      "subject": { "reference": "Patient/<patientId>" },
-     "effectiveDateTime": "<ISO timestamp>",
-     "valueQuantity": { "value": <number>, "unit": "<unit>", "system": "http://unitsofmeasure.org", "code": "<UCUM>" }
+     "encounter": { "reference": "Encounter/<encounterId>" },
+     "effectiveDateTime": "<ISO timestamp — when measured>",
+     "issued": "<ISO timestamp — when filed (now)>",
+     "identifier": [{ "system": "urn:oid:2.16.840.1.113883.3.7418", "value": "<unique-id>" }],
+     "valueQuantity": { "value": "<number>", "unit": "<unit>", "system": "http://unitsofmeasure.org", "code": "<UCUM>" }
    }
    ```
-2. Special handling for Blood Pressure (component observation):
-   - Code: 55284-4
-   - Two components: systolic (8480-6) + diastolic (8462-4) in same resource
+2. Special handling for Blood Pressure:
+   - Cerner sandbox **rejects** `Observation.component` — do NOT use component-based BP.
+   - POST systolic (`8480-6`) and diastolic (`8462-4`) as **two separate Observations** with the same `effectiveDateTime`.
+   - Cerner pairs them automatically on subsequent search if configured in Millennium.
+   - Search for standalone BP: use `code=8480-6,8462-4` (NOT the panel code `85354-9`).
 3. POSTs to `{baseUrl}/Observation` with `patient/Observation.crus` scope
-4. Returns created resource on 201 success
-5. On success: Toast notification + VitalsPanel auto-refreshes
+4. Cerner returns **201 with empty body** — extract resource ID from `Location` response header
+5. On success: Toast notification + VitalsPanel uses optimistic update (shows new value immediately)
+6. On failure: Parse `OperationOutcome.issue[0].diagnostics` for user-friendly error message
 
 **File**: `src/components/Toast.tsx`
 - Success: "Vital signs recorded successfully" (green, auto-dismiss 3s)
 - Error: user-friendly message based on HTTP status (422/401/400/500)
+
+### 1.4.1 Cerner Sandbox — Confirmed Working LOINC / Code Mappings (Create)
+
+> **Last updated**: 2026-03-08 — Based on exhaustive diagnostic testing against
+> Cerner sandbox tenant `ec2458f2-1e24-41c8-b71b-0e701af7583d`.
+
+#### ✅ Working Creates (HTTP 201) — 7 of 9 vital types
+
+| Vital | Code System | Code | code.text | UCUM unit | Notes |
+|-------|------------|------|-----------|-----------|-------|
+| Temperature | LOINC | `8331-1` | Temperature Oral | `Cel` | Originally `8310-5` (generic) → 422. Switched to `8331-1` (Temperature Oral). |
+| Systolic BP | LOINC | `8459-0` | Systolic Blood Pressure | `mm[Hg]` | Standalone POST (NOT component-based). Cerner pairs with diastolic. |
+| Diastolic BP | LOINC | `8454-1` | Diastolic Blood Pressure | `mm[Hg]` | Standalone POST (NOT component-based). Same effectiveDateTime as systolic. |
+| Weight | LOINC | `3141-9` | Weight Measured | `kg` | Originally `29463-7` (generic) → 422. Switched to `3141-9` (Body weight Measured). |
+| Height | LOINC | `3137-7` | Height/Length Measured | `cm` | Originally `8302-2` (generic) → 422. Switched to `3137-7` (Body height Measured). |
+| BMI | LOINC | `39156-5` | Body Mass Index Measured | `kg/m2` | Worked on first try. |
+| **SpO2** | **Proprietary** | **`703498`** | **Oxygen Saturation** | `%` | **LOINC codes all fail.** Proprietary-only codeSet/72 code works. |
+
+**Pattern**: Cerner sandbox prefers "Measured" LOINC variants over generic codes. SpO2 requires proprietary code (codeSet/72 `703498`).
+
+#### ❌ Not Working (HTTP 422) — 2 of 9 vital types
+
+| Vital | LOINC Codes Tested | Proprietary codeSet/72 | Other Variants Tested | Conclusion |
+|-------|-------------------|----------------------|----------------------|------------|
+| Heart Rate | `8867-4`, `8893-0`, `69000-8`, `69001-6`, `68999-2`, `8890-6`, `76282-3` | `703511` (Peripheral Pulse Rate) | unit=/min, unit=bpm, no-UCUM-system, bare minimum, no encounter, no performer, dual category, therapy-only category | All fail with generic 422. Likely requires Provider/System persona scope. |
+| Respiratory Rate | `9279-1` | `703540` (Respiratory Rate) | unit=/min, unit=br/min, bare minimum, dual category | All fail with generic 422. Same conclusion. |
+
+#### Cerner Create Rules Discovered
+
+1. **Mixed coding rejected**: `code.coding[]` with both proprietary (codeSet/72) AND LOINC → `"cannot contain proprietary and standard codes"`
+2. **Category must be exactly 1**: Dual `therapy` + `vital-signs` → `"expected exactly 1 list item"`. Server adds extra categories post-create.
+3. **Category must be vital-signs, laboratory, or imaging**: `therapy`-only → `"must be one of laboratory, vital-signs, or imaging"`
+4. **valueQuantity requires all 3**: `system`, `code`, and `unit` must ALL be present together.
+5. **Different patient → 403**: `patient/Observation.crus` scope is bound to in-context patient only.
+6. **Cerner docs state Create is Provider/System persona only** — our app uses `patient/Observation.crus`. Most vitals work; HR/RR do not.
+
+#### Proprietary Code Mappings (from existing observations search)
+
+| Vital | codeSet/72 Code | Display | LOINC Equivalents | Create Status |
+|-------|----------------|---------|-------------------|---------------|
+| Heart Rate | `703511` | Peripheral Pulse Rate | `8867-4`, `8893-0` | ❌ 422 |
+| Respiratory Rate | `703540` | Respiratory Rate | `9279-1` | ❌ 422 |
+| SpO2 | `703498` | Oxygen Saturation | `2708-6`, `59408-5` | ✅ 201 |
+
+### 1.4.2 Impact Analysis — HR & RR Create Unavailability
+
+> Heart Rate and Respiratory Rate cannot be created via the Cerner FHIR API in the
+> public sandbox using `patient/Observation.crus` scope. This impacts multiple areas.
+
+#### A.1 Requirement 4: "Allow the user to create new vital sign entries"
+
+- **Requirement is partially fulfilled**: 7 of 9 vital types create successfully.
+- HR and RR fields are present in the form but **marked read-only** with explanation.
+- The form accepts and submits all other vital types (Temp, BP, SpO2, Height, Weight, BMI).
+- **Mitigation**: The form UI clearly communicates the sandbox limitation. In production with Provider persona scope (`user/Observation.crus`), these would likely work.
+
+#### Phase 2 — Risk Scores (NEWS2, qSOFA)
+
+| Risk Score | HR/RR Dependency | Impact |
+|-----------|-----------------|--------|
+| **NEWS2** | HR and RR are **2 of 7 required inputs** | Can still calculate using **existing** HR/RR observations (read works, only create is blocked). Score computes with latest available values. If no historical HR/RR exists for a patient, NEWS2 shows data gaps. |
+| **qSOFA** | RR is **1 of 3 inputs** (RR ≥ 22?) | Same mitigation — uses existing RR observations. Shows data gap if none exist. |
+| **ASCVD** | No dependency on HR/RR | ✅ No impact |
+| **CHA₂DS₂-VASc** | No dependency on HR/RR | ✅ No impact |
+
+**Key point**: Risk scores READ vitals, they don't CREATE them. The existing HR/RR observations in the sandbox (Peripheral Pulse Rate ×2, Respiratory Rate ×1 per search results) are sufficient for risk score calculation.
+
+#### Phase 3 — AI Insights
+
+- AI analysis fetches vitals via `getVitalSigns()` which READs — no create dependency.
+- Lab trends, drug interactions, clinical insights are unaffected.
+
+#### Phase 4 — Smart Notes
+
+- No dependency on vital sign creation.
+
+#### Workarounds & Production Path
+
+1. **Sandbox**: HR/RR read-only. Risk scores use historical data. App clearly marks limitation.
+2. **Production**: Register app with Provider persona → server grants `user/Observation.crus` → HR/RR creates should work.
+3. **Alternative sandbox approach**: If a Cerner support ticket can enable Provider scope in sandbox, HR/RR may start working immediately (the codes are confirmed mapped by Cerner engineer Fenil Desani).
 
 ### 1.5 Verification Criteria (Given/When/Then)
 
@@ -392,74 +504,80 @@ Implementation:
 
 ---
 
-## Phase 2 — Dashboard: Multi-Patient Command Center + Risk Scores
-**Estimated Effort**: L (5-8 days)
+## Phase 2 — Dashboard: Single-Patient Clinical Dashboard + Risk Scores
+**Estimated Effort**: M (3-5 days)
 **Dependencies**: Phase 1 (auth + FHIR service layer)
 
-### 2.1 Practitioner Panel Identification
+> **Design Decision**: The original plan called for a multi-patient Command Center with
+> practitioner panel discovery. This was dropped because (a) Cerner sandbox only grants
+> `patient/` scopes — never `user/` scopes — making panel discovery impossible in the
+> sandbox, and (b) SMART on FHIR patient-context launches inherently serve one patient
+> at a time, so multi-patient UI adds near-zero production value. The app now focuses
+> entirely on enriching the single in-context patient view.
+
+### 2.1 Practitioner Identity
 
 **File**: `src/services/fhir/practitioner.ts`
 
-`getPractitioner(practitionerId)`:
+`getPractitioner(practitionerId, token)`:
 - Fetches `Practitioner/{id}` to get logged-in practitioner details (name, role)
 
-`getPanelPatients(practitionerId)`:
-- **Strategy A**: Fetch recent Encounters via `user/Encounter.rs` scope
-  - `Encounter?status=in-progress,finished&_count=50&_sort=-date`
-  - Extract unique patient references from `Encounter.subject`
-  - Filter encounters where `Encounter.participant` contains the logged-in practitioner
-- **Strategy B**: Search Patients via `user/Patient.rs` scope
-  - Fetch patients, check `Patient.generalPractitioner` for practitioner match
-- Combine both strategies, deduplicate by patient ID
-- Return `PanelPatient[]` with demographics
-- Read-only panel derivation only: do not create/assign practitioner-patient access relationships
+`getPractitionerDisplayName(practitioner)`:
+- Extracts human-readable display name from Practitioner resource
+- Falls back through `name[].text`, `given + family`, `family`, then `"Practitioner"`
 
-**File**: `src/hooks/usePanelPatients.ts`
-- React hook wrapping `getPanelPatients()`
-- Caches results, polls every 5 minutes for updates
-- Exposes `patients`, `isLoading`, `error`, `refetch`
+### 2.2 Patient Demographics
 
-### 2.2 Command Center Dashboard UI
+**Inline in**: `src/hooks/usePatientDashboard.ts`
 
-**File**: `src/features/dashboard/CommandCenter.tsx`
-- Full-viewport grid layout: `h-screen` minus banner height (if shown)
-- Layout (CSS Grid):
+`getPatientDemographics(patientId, token)`:
+- Fetches `Patient/{id}` for `gender` and `birthDate`
+- Computes age from birthDate for age-dependent risk scores (ASCVD, CHA₂DS₂-VASc)
+
+### 2.3 Clinical Dashboard UI
+
+**File**: `src/features/dashboard/ClinicalDashboard.tsx`
+- Single-patient clinical overview with three sections:
   ```
-  ┌──────────────────┬────────────────────────────────────────┐
-  │  Practitioner     │  Patient Cards Grid (2-3 columns)      │
-  │  Info Card        │                                        │
-  │                   │  ┌──────────┐ ┌──────────┐ ┌────────┐ │
-  │  ──────────────   │  │ Patient 1│ │ Patient 2│ │ Pat. 3 │ │
-  │  Patient List     │  │ vitals   │ │ vitals   │ │ vitals │ │
-  │  (sortable,       │  │ risks    │ │ risks    │ │ risks  │ │
-  │   searchable)     │  └──────────┘ └──────────┘ └────────┘ │
-  │                   │                                        │
-  │  ──────────────   │  ┌──────────┐ ┌──────────┐            │
-  │  Sort: Severity   │  │ Patient 4│ │ Patient 5│            │
-  │  Filter: Name     │  │ ...      │ │ ...      │            │
-  │                   │  └──────────┘ └──────────┘            │
-  └──────────────────┴────────────────────────────────────────┘
-    20% width                      80% width
+  ┌────────────────────────────────────────────────────┐
+  │  Header: Dr. [Name]  │  📋 Record Vitals  │  🔄   │
+  ├────────────────────────────────────────────────────┤
+  │  Vitals Overview (responsive tile grid)            │
+  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐    │
+  │  │  BP  │ │  HR  │ │ Temp │ │ SpO2 │ │  RR  │    │
+  │  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘    │
+  ├────────────────────────────────────────────────────┤
+  │  Active Conditions (chip pills: CHF, HTN, DM…)    │
+  ├────────────────────────────────────────────────────┤
+  │  Risk Assessment                                    │
+  │  Badge row: [NEWS2: 5] [qSOFA: 1] [ASCVD: 8%]    │
+  │  Detail cards grid:                                 │
+  │  ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+  │  │ NEWS2    │ │ qSOFA    │ │ ASCVD    │           │
+  │  │ details  │ │ details  │ │ details  │           │
+  │  └──────────┘ └──────────┘ └──────────┘           │
+  └────────────────────────────────────────────────────┘
   ```
-- In-context patient (from EHR launch) highlighted with accent border
-- No scroll: if too many patients, use compact card mode or pagination dots
-- Optional personal shortlist: practitioner can pin/unpin patients for quick access ordering (no access changes)
+- Responsive: 3-column at desktop, 2-column at tablet, single at mobile
+- "Record Vitals" button switches to Phase 1 vitals recording view
+- Refresh button re-fetches all data
+- All styling uses Tailwind utility classes (no CSS class prefixes — `cd-*` prefix removed during Tailwind migration)
 
-**File**: `src/features/dashboard/PatientCard.tsx`
-- Compact card per patient:
-  - Row 1: Name, Age, Gender
-  - Row 2: Key vitals snapshot (BP, HR, Temp as compact values)
-  - Row 3: Risk score badges (NEWS2, qSOFA, ASCVD, CHA₂DS₂-VASc)
-  - Left border color = highest severity among risk scores
-- Click → navigates to AI Insights (Phase 3) for that patient
+**File**: `src/features/dashboard/RiskBadge.tsx`
+- Compact colored badge: `NEWS2: 7` in red, `ASCVD: 12%` in yellow, etc.
+- Green (low risk), Yellow (moderate), Red (high)
+- Gray with "?" when insufficient data
+- Hover tooltip: shows score breakdown and data gaps
 
-**File**: `src/features/dashboard/PatientList.tsx`
-- Left sidebar patient list remains scroll-free; for large panels use compact rows + pagination controls
-- Sort options: Name (A-Z), Severity (highest first), Last Updated
-- Search filter by name/MRN
-- In-context patient pinned to top
+**File**: `src/hooks/usePatientDashboard.ts`
+- React hook orchestrating all clinical data fetching
+- Fires in parallel: practitioner name, patient demographics, vitals, conditions
+- Computes risk scores from fetched data
+- Extracts condition flags for display
+- Auto-polls every 5 minutes
+- Returns: `{ practitionerName, patientData, isLoading, error, refetch }`
 
-### 2.3 Risk Score Calculators
+### 2.4 Risk Score Calculators
 
 **File**: `src/utils/risk-scores/news2.ts`
 - National Early Warning Score 2
@@ -476,43 +594,31 @@ Implementation:
 **File**: `src/utils/risk-scores/ascvd.ts`
 - 10-year ASCVD Risk (Pooled Cohort Equations)
 - Inputs: age, gender, race, total cholesterol, HDL, SBP, BP treatment, diabetes, smoking
-- Sources: Patient (age, gender), Observation (cholesterol, HDL, SBP), Condition (diabetes), Social History observation (smoking)
 - Output: `{ riskPercent: number, level: 'low' | 'borderline' | 'intermediate' | 'high' }`
 
 **File**: `src/utils/risk-scores/cha2ds2vasc.ts`
 - CHA₂DS₂-VASc Stroke Risk
 - Inputs: CHF, hypertension, age, diabetes, stroke/TIA history, vascular disease, sex
-- Sources: Condition (comorbidities), Patient (age, sex)
 - Output: `{ score: 0-9, riskLevel: string, annualStrokeRisk: string }`
 
-**File**: `src/features/dashboard/RiskBadge.tsx`
-- Compact colored badge: `NEWS2: 7` in red, `ASCVD: 12%` in yellow, etc.
-- Green (low risk), Yellow (moderate), Red (high)
-- Gray with "?" when insufficient data
-- Hover tooltip: shows score breakdown and data gaps
+### 2.5 Verification Criteria (Given/When/Then)
 
-### 2.4 Verification Criteria (Given/When/Then)
+- **P2-01** — Given authenticated practitioner context; when dashboard loads; then practitioner name is displayed in the header.
+- **P2-02** — Given in-context patient has vitals; when dashboard renders; then vitals tile grid shows latest values for BP, HR, Temp, SpO2, RR.
+- **P2-03** — Given patient has active conditions (CHF, HTN, DM, etc.); when dashboard renders; then condition flag chips are displayed.
+- **P2-04** — Given required risk inputs exist; when risk assessment renders; then NEWS2, qSOFA, ASCVD, CHA₂DS₂-VASc badges and detail cards show correct values and severity colors.
+- **P2-05** — Given patient lacks some risk inputs; when risk badges render; then gray `?` and visible data-gap explanation appear.
+- **P2-06** — Given patient has birthDate and gender in FHIR resource; when risk scores compute; then age/sex-dependent scores (ASCVD, CHA₂DS₂-VASc) use real demographics.
+- **P2-07** — Given user clicks "Record Vitals"; when navigation triggers; then app switches to Phase 1 vitals recording view.
+- **P2-08** — Given user clicks refresh; when data re-fetches; then latest vitals and conditions are shown.
+- **P2-09** — Given dashboard tested at 1920×1080 and 1366×768; when layout renders; then responsive grid adapts appropriately.
 
-- **P2-01** — Given authenticated practitioner context; when dashboard panel retrieval initializes; then panel set equals deduped Encounter+Patient strategy output.
-- **P2-02** — Given retrieval runs under `user/` scopes; when calls are inspected during load/refresh; then no create/update/assign panel calls occur and access stays read-only.
-- **P2-03** — Given practitioner identity is available; when dashboard provider context renders; then practitioner info card shows resolved logged-in identity.
-- **P2-04** — Given panel includes seeded and sparse patients; when cards render; then each card shows Name/Age/Gender plus latest vitals snapshot fields.
-- **P2-05** — Given in-context launch patient exists; when panel is shown/sorted; then in-context patient is highlighted and pinned per ordering rules.
-- **P2-06** — Given required risk inputs exist for at least one patient; when risk badges render; then NEWS2, qSOFA, ASCVD, CHA₂DS₂-VASc format and severity colors are correct.
-- **P2-07** — Given one patient lacks required risk inputs; when risk badges/details render; then gray `?` and visible data-gap explanation appear.
-- **P2-08** — Given mixed-severity panel patients; when sorting by Severity and Last Updated; then highest severity appears first with deterministic tie handling.
-- **P2-09** — Given user enters Name/MRN terms; when search filter is applied; then filtering is case-insensitive with explicit no-match state.
-- **P2-10** — Given user pins/unpins shortlist entries; when order updates and view refreshes; then shortlist order changes without altering accessible panel membership.
-- **P2-11** — Given dashboard tested at `1920x1080`, `1366x768`, `1280x720` under high volume; when layout is exercised; then layout remains scroll-free via compact mode and/or pagination.
-- **P2-12** — Given user clicks patient card; when navigation triggers; then route behavior is unambiguous and matches phase destination.
+### 2.6 Fixture Mapping
 
-### 2.5 Fixture Mapping
-
-- **P2-01, P2-02, P2-03** → Practitioner launch fixture (`Practitioner/593923`)
-- **P2-04, P2-05, P2-09, P2-10, P2-11, P2-12** → Joe (`12724067`)
-- **P2-06, P2-08** → Fredrick (`12724070`)
-- **P2-07** → Sandy (ID confirmation required)
-- **Supplemental panel coverage** → Nancy (`12724066`), Wilma (`12724065`), Valerie (`12724071`)
+- **P2-01** → Practitioner launch fixture (`Practitioner/593923`)
+- **P2-02, P2-07, P2-08** → Joe (`12724067`)
+- **P2-03, P2-04** → Fredrick (`12724070`) — has conditions + vitals
+- **P2-05** → Sandy (sparse data patient)
 
 ---
 
@@ -811,7 +917,7 @@ Audit checks:
 ### 5.5 End-to-End Test Scenarios
 
 - **1. Full workflow**
-  - Steps: Launch → Dashboard → Select Fredrick → AI Insights → Smart Notes → Save
+  - Steps: Launch → Dashboard → Review Risk Scores → AI Insights → Smart Notes → Save
   - Expected result: Complete flow in <60 seconds
 - **2. Vital sign CRUD**
   - Steps: Dashboard → View Joe vitals → Record new BP 120/80 → Verify in list
@@ -819,9 +925,9 @@ Audit checks:
 - **3. Patient banner toggle**
   - Steps: Launch with banner=true → verify visible; launch with banner=false → verify hidden
   - Expected result: Banner follows EHR instruction
-- **4. Multi-patient view**
-  - Steps: Dashboard → verify multiple patients from panel
-  - Expected result: Panel patients rendered with scores
+- **4. Dashboard clinical overview**
+  - Steps: Launch → Dashboard → verify vitals tiles, conditions, risk scores
+  - Expected result: All clinical data rendered for in-context patient
 - **5. AI with rich data**
   - Steps: Select Hailey (9 meds) → AI Insights → check for interaction alerts
   - Expected result: AI flags immunosuppressant interactions
@@ -882,8 +988,8 @@ Audit checks:
   - Dependencies: Phase 0
   - Parallelizable: —
 - **Phase 2**
-  - Deliverable: Dashboard (Command Center + Risk Scores)
-  - Effort: L (5-8d)
+  - Deliverable: Dashboard (Single-Patient Clinical Dashboard + Risk Scores)
+  - Effort: M (3-5d)
   - Dependencies: Phase 1
   - Parallelizable: Yes, with Phase 3
 - **Phase 3**
@@ -963,7 +1069,7 @@ This addendum defines a constrained, post-MVP option to introduce agentic behavi
 
 - **Phase 0 Exit**: Environment/config complete, dev startup clean, TypeScript checks pass, full scope registration verified, and Observation create/read smoke test pass recorded.
 - **Phase 1 Exit**: All `P1-*` acceptance rows pass at `1920x1080`, `1366x768`, and `1280x720`.
-- **Phase 2 Exit**: All `P2-*` acceptance rows pass, including read-only panel derivation and shortlist behavior.
+- **Phase 2 Exit**: All `P2-*` acceptance rows pass, including patient demographics fetch and risk score computation.
 - **Phase 3 Exit**: All `P3-*` acceptance rows pass, including structured-output checks and latency target.
 - **Phase 4 Exit**: All `P4-*` acceptance rows pass, including review-before-save and save/cancel API behavior.
 - **Phase 5 Exit**: All `P5-*` acceptance rows and all scenario checks pass.
@@ -973,9 +1079,9 @@ This addendum defines a constrained, post-MVP option to introduce agentic behavi
 
 ## Risks & Mitigations
 
-- **`user/` scopes may not return panel patients as expected in sandbox**
-  - Impact: Blocks Phase 2 dashboard
-  - Mitigation: Test early in Phase 1; fallback to hardcoded patient IDs for demo
+- **`user/` scopes not available in Cerner sandbox**
+  - Impact: Originally blocked multi-patient panel discovery — resolved by dropping multi-patient approach
+  - Resolution: App uses only `patient/` scopes with single in-context patient
 - **Cerner sandbox data too sparse for compelling AI insights**
   - Impact: Weakens Phase 3/4 demos
   - Mitigation: Phase 0 data seeding script addresses this

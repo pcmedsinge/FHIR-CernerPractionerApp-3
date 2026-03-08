@@ -9,6 +9,22 @@
 - For official Cerner/SMART URLs, use `Cerner FHIR ref .md`
 - Always reference this file at the start of every implementation session
 
+## Implementation Compliance (Execution Gate)
+- Before closing any phase, verify implementation against this file and `implementation-plan.md` acceptance criteria.
+- Any intentional deviation must be documented explicitly in this file under **Temporary Exceptions** before moving to next phase.
+- Scope/architecture/security decisions in this file are authoritative unless the user explicitly overrides them.
+
+## Pre-Implementation Research Gate (Mandatory)
+**BEFORE writing any FHIR create, update, or search code for a new resource type:**
+1. **Find Cerner's official examples**: Check `Cerner FHIR ref .md` for the GitHub source links, then read the `_CREATE`, `_UPDATE`, and search examples for that resource in `r4_examples_observation.rb` (or equivalent file for other resources).
+2. **Read the Implementation Notes**: Check the resource's `.md` file on GitHub for Cerner-specific quirks, required fields, and search parameter limitations.
+3. **Compare every field**: Your POST payload must include every field present in Cerner's official example. Missing fields like `code.text`, `category.text`, or `encounter` cause 422 errors or silent indexing failures.
+4. **Document findings in agent.md**: Add a reference section (like "Cerner FHIR Observation API Reference") before writing implementation code.
+5. **This gate applies to**: Observation, Condition, Encounter, Patient, MedicationRequest, AllergyIntolerance, DocumentReference, Appointment, and any other FHIR resource used in the app.
+
+### Temporary Exceptions
+- ~~**Styling rule exception (active in Phase 1 scaffold):** Current app shell/auth status UI uses `src/App.css` and `src/index.css` for bootstrap speed. This is temporary and must be migrated to Tailwind utility classes/components before Phase 2 sign-off.~~ **RESOLVED** — Tailwind CSS v4 fully activated and all components migrated (2026-03-08). `App.css` deleted. See Completed Milestones below.
+
 ## Project Identity
 - **App Name**: PractitionerHub
 - **Type**: SMART on FHIR EHR Launch (Provider Persona)
@@ -20,9 +36,14 @@
 
 ## Technology Stack (from requirement.md Section C)
 - **Language**: TypeScript (strict mode)
-- **Framework**: React (functional components + hooks only)
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS only — no inline styles, no CSS modules
+- **Framework**: React 19 (functional components + hooks only)
+- **Build Tool**: Vite 7 with `@tailwindcss/vite` plugin
+- **Styling**: Tailwind CSS v4 only — utility-first, no `App.css`, no CSS modules
+  - Config lives in `src/index.css` via `@import "tailwindcss"` + `@theme` block (Tailwind v4 CSS-based config, NOT `tailwind.config.js`)
+  - Semantic color tokens: `status-normal`, `status-warning`, `status-critical`, `accent`, `surface`, `card`, `card-border`, etc.
+  - Custom animation tokens: `shimmer`, `spinner`, `modal-in`, `toast-in`, `toast-out`, `save-in`
+  - Only 3 custom CSS classes kept in `@layer components` (can't be Tailwind utilities): `dialog.modal-backdrop`, `.vital-status-bar`, `.skeleton-gradient`
+  - **Rule**: All new UI must use Tailwind utility classes. Never create new CSS files.
 - **Backend** (if needed): C# minimal API (for AI proxy / API key protection)
 - **AI**: OpenAI Platform (GPT models) for prototype use; PHI/compliance risk accepted for MVP testing only.
 
@@ -52,6 +73,131 @@
 - The `Patient.generalPractitioner` field links patients to their primary practitioner
 - `Encounter.participant` contains practitioner references with roles: Attending Physician, Consulting Physician, Referring Physician, Covering Physician
 - Open endpoint (no auth): `https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d` — for metadata/testing only
+
+## Cerner FHIR Observation API Reference
+
+Source: https://github.com/cerner/fhir.cerner.com/blob/main/content/millennium/r4/clinical/diagnostics/observation.md
+and https://github.com/cerner/fhir.cerner.com/blob/main/lib/resources/example_json/r4_examples_observation.rb
+
+### Observation Search Rules
+- The `code` parameter searches **only** `Observation.code` (not components).
+- For Blood Pressure: search by the **panel code** `85354-9`. Using component codes `8480-6` (Systolic) or `8462-4` (Diastolic) will NOT return component-based BP resources.
+- If POSTing systolic/diastolic as standalone Observations (not as BP components), search by their individual codes `8480-6` / `8462-4` will work.
+- Bare LOINC codes work in `code` param: `code=8867-4,8310-5` — no system prefix required.
+- **"Searching records with vital-signs category by code with proprietary system will result in empty response."** — use LOINC system only.
+- `code` may be a comma-separated list: `code=8867-4,8310-5,9279-1`
+- Per-code queries are faster than broad `category=vital-signs` queries on Cerner's index.
+- Maximum `_count=200`. Default is 50.
+- Pagination: social history always on first page; subsequent pages sorted by effective date desc.
+
+### Observation Create (POST) — Required Fields
+Cerner rejects POSTs missing required fields with **422 Unprocessable Entity**.
+
+**Mandatory fields for vital-signs:**
+| Field | Requirement | Notes |
+|-------|-------------|-------|
+| `resourceType` | `"Observation"` | |
+| `status` | `"final"` | |
+| `category[0].coding[0].system` | `http://terminology.hl7.org/CodeSystem/observation-category` | |
+| `category[0].coding[0].code` | `vital-signs` | |
+| `category[0].coding[0].display` | `Vital Signs` | |
+| **`category[0].text`** | **`"Vital Signs"` — REQUIRED by Cerner** | Missing this causes 422 or indexing failures |
+| `code.coding[0].system` | `http://loinc.org` | |
+| `code.coding[0].code` | LOINC code (e.g. `8867-4`) | |
+| `code.coding[0].display` | Display name (e.g. `Heart rate`) | |
+| **`code.text`** | **Display name — REQUIRED by Cerner** | Missing this causes 422 |
+| `subject.reference` | `Patient/{id}` | |
+| `effectiveDateTime` | ISO 8601 timestamp | When measurement was taken |
+| `issued` | ISO 8601 timestamp | When observation was recorded/filed |
+| `valueQuantity.value` | Numeric value | |
+| `valueQuantity.unit` | Display unit (e.g. `degC`, `%`, `mmHg`) | |
+| `valueQuantity.system` | `http://unitsofmeasure.org` | |
+| `valueQuantity.code` | UCUM code (e.g. `Cel`, `mm[Hg]`, `/min`) | |
+
+**Strongly recommended fields:**
+| Field | Requirement | Notes |
+|-------|-------------|-------|
+| `encounter.reference` | `Encounter/{id}` | From SMART launch context. Cerner uses this for proper indexing and pairing. |
+| `identifier` | Unique identifier | Prevents 409 Conflict from duplicate detection |
+| `performer` | Practitioner reference | All Cerner examples include this |
+
+### Observation Create — Blood Pressure
+- Cerner supports component-based BP with panel code `85354-9` and systolic/diastolic components.
+- **However, Cerner sandbox may reject `Observation.component`** — in that case, POST systolic (`8480-6`) and diastolic (`8462-4`) as two separate standalone Observations with the same `effectiveDateTime`.
+- Cerner will pair standalone systolic/diastolic on subsequent search **if configured in Millennium** (Blood Pressure Event Set Pairing Hierarchy).
+- Search for BP panel: use `code=85354-9` (returns component-based). For standalone: use `code=8480-6,8462-4`.
+
+### Observation Create — Cerner Example (Temperature)
+```json
+{
+  "resourceType": "Observation",
+  "status": "final",
+  "category": [{
+    "coding": [{
+      "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+      "code": "vital-signs",
+      "display": "Vital Signs"
+    }],
+    "text": "Vital Signs"
+  }],
+  "code": {
+    "coding": [{
+      "system": "http://loinc.org",
+      "code": "8331-1"
+    }],
+    "text": "Temperature Oral"
+  },
+  "subject": { "reference": "Patient/12457981" },
+  "encounter": { "reference": "Encounter/97845408" },
+  "effectiveDateTime": "2020-04-03T19:21:00.000Z",
+  "issued": "2020-04-03T19:21:40.000Z",
+  "performer": [{ "reference": "Practitioner/11638321" }],
+  "valueQuantity": {
+    "value": 37.20,
+    "unit": "degC",
+    "system": "http://unitsofmeasure.org",
+    "code": "Cel"
+  }
+}
+```
+
+### Observation Create — Response
+- Returns **201 Created** with empty body.
+- Resource ID is in the `Location` header: `Location: .../Observation/L-197392513`
+- `ETag` header contains version for subsequent updates.
+
+### UCUM Code Reference (for valueQuantity.code)
+| Display Unit | UCUM Code |
+|-------------|----------|
+| bpm / br/min | `/min` |
+| degC / °C | `Cel` |
+| degF / °F | `[degF]` |
+| % | `%` |
+| cm | `cm` |
+| in | `[in_i]` |
+| kg | `kg` |
+| lb | `[lb_av]` |
+| kg/m² | `kg/m2` |
+| mmHg | `mm[Hg]` |
+| L/min | `L/min` |
+
+### Cerner Eventual Consistency
+- Cerner uses a CQRS pattern: primary write store is separate from search index.
+- A newly-created Observation is immediately readable by direct `GET /Observation/{id}`.
+- It may take 30-120 seconds (occasionally longer) to appear in search queries (`GET /Observation?patient=X&code=Y`).
+- Design UI to show optimistic updates immediately; do NOT rely solely on search refresh.
+
+### Supported Vital Signs for Create
+See: https://wiki.cerner.com/pages/releaseview.action?spaceKey=reference&title=Understand%20Supported%20Vital%20Signs%20in%20the%20FHIR%20Observation%20Resource
+
+### Lessons Learned (from Phase 1.4 implementation)
+1. Missing `code.text` and `category[0].text` causes 422 errors and/or search indexing failures on Cerner.
+2. Cerner sandbox rejects `Observation.component` for Blood Pressure — must POST as two separate resources.
+3. `encounter.reference` should always be included when available from SMART launch context.
+4. Use `identifier` with a unique value to prevent 409 Conflict from Cerner's duplicate detection.
+5. `issued` should be set to current timestamp (when filed), not the measurement time (`effectiveDateTime`).
+6. Cerner returns 201 with empty body — extract resource ID from `Location` header.
+7. Do NOT use system-qualified LOINC codes in search (`code=http://loinc.org|8867-4`) — bare codes work and system-qualified with unencoded `|` breaks the query.
 
 ## Scope Strategy
 - `patient/` scopes — for in-context patient data (single patient from EHR launch)
@@ -96,19 +242,27 @@ user/Practitioner.rs
 ## Project Structure
 ```
 src/
-├── auth/           # SMART launch + token management
-├── components/     # Shared UI (PatientBanner, VitalCard, Badge, Modal, Toast)
+├── index.css           # Tailwind v4 entry: @import, @theme, @layer base/components
+├── auth/               # SMART launch + token management
+├── components/         # Shared UI (AppShell, PatientBanner, Modal, Toast)
 ├── features/
-│   ├── dashboard/  # Module 1: Command Center + Risk Scores
-│   ├── insights/   # Module 2: AI Clinical Decision Assistant
-│   └── notes/      # Module 3: Smart Documentation Assistant
-├── hooks/          # Custom hooks (useFhirClient, usePatient, usePanelPatients)
+│   ├── dashboard/      # Module 1: Clinical Dashboard + Risk Scores + VitalsPanel
+│   ├── insights/       # Module 2: AI Clinical Decision Assistant (stub)
+│   └── notes/          # Module 3: Smart Documentation Assistant (stub)
+├── hooks/              # Custom hooks (usePatientDashboard)
 ├── services/
-│   ├── fhir/       # FHIR API wrappers (observations, conditions, patients, etc.)
-│   └── ai/         # OpenAI Platform integration
-├── types/          # TypeScript interfaces for FHIR resources + app types
-└── utils/          # Risk score calculators, formatters, validators
+│   ├── fhir/           # FHIR API wrappers (observations, conditions, practitioner, client)
+│   └── ai/             # OpenAI Platform integration (future)
+├── types/              # TypeScript interfaces (app.ts)
+└── utils/              # Risk score calculators (news2, qsofa, ascvd, cha2ds2vasc)
 ```
+
+**Deleted files** (multi-patient code removed, Tailwind migration complete):
+- `src/App.css` — all 1426 lines replaced by Tailwind utilities
+- `src/hooks/usePanelPatients.ts` — multi-patient hook
+- `src/features/dashboard/CommandCenter.tsx` — multi-patient view
+- `src/features/dashboard/PatientCard.tsx` — multi-patient card
+- `src/features/dashboard/PatientList.tsx` — multi-patient list
 
 ## Decisions Already Made (Do NOT re-propose alternatives)
 
@@ -127,6 +281,9 @@ src/
 | Standalone vital signs viewer | Rejected | User's Epic patient app already does this |
 | SMART version | Stay v2, no re-registration | Downgrade to v1 |
 | Scope strategy | `user/` + `patient/` combined | `system/` scopes (too broad) |
+| **Multi-patient Command Center** | **Dropped** — single-patient dashboard only | Multi-patient panel discovery |
+| **Styling approach** | **Tailwind CSS v4 utility-first** (all components) | Hand-written App.css |
+| **Tailwind config format** | **CSS-based `@theme` in index.css** (v4 style) | JS-based tailwind.config.js (v3 style) |
 
 ## Sandbox Test Data Reference
 
