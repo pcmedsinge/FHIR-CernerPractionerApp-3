@@ -61,8 +61,7 @@ export async function getPatientLabs(
 
     // Extract reference range if present
     let refRange: LabReading['referenceRange'] = null
-    const rr = (obs as unknown as Record<string, unknown>)['referenceRange'] as
-      Array<{ low?: { value?: number }; high?: { value?: number } }> | undefined
+    const rr = obs.referenceRange
     if (rr?.[0]) {
       refRange = {
         low: rr[0].low?.value ?? null,
@@ -94,7 +93,13 @@ export async function getPatientLabs(
         referenceRange: r.referenceRange,
       })
     }
-    groupMap.get(key)!.readings.push(r)
+    const group = groupMap.get(key)!
+    group.readings.push(r)
+
+    // If group has no reference range yet but this reading does, use it
+    if (!group.referenceRange && r.referenceRange) {
+      group.referenceRange = r.referenceRange
+    }
   }
 
   // Sort groups by name, readings already sorted by date (desc from FHIR)

@@ -101,6 +101,11 @@ export interface FhirObservation {
   status?: string
   category?: CodeableConcept[]
   subject?: Reference
+  referenceRange?: Array<{
+    low?: Quantity
+    high?: Quantity
+    text?: string
+  }>
 }
 
 export interface FhirCondition {

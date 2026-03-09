@@ -363,6 +363,54 @@ function generateLocalVitalsInsights(summary: PatientClinicalSummary): ClinicalI
   return insights.slice(0, 3)
 }
 
+// ---------------------------------------------------------------------------
+// Common clinical reference ranges — fallback when FHIR data lacks them
+// ---------------------------------------------------------------------------
+
+const COMMON_REF_RANGES: Array<{ patterns: string[]; low: number | null; high: number | null }> = [
+  // Chemistry
+  { patterns: ['glucose',  'blood glucose'],        low: 70,    high: 100   },
+  { patterns: ['creatinine'],                        low: 0.6,   high: 1.2   },
+  { patterns: ['bun', 'blood urea nitrogen', 'urea nitrogen'], low: 7, high: 20 },
+  { patterns: ['sodium', 'na'],                      low: 136,   high: 145   },
+  { patterns: ['potassium', 'k'],                    low: 3.5,   high: 5.0   },
+  { patterns: ['chloride', 'cl'],                    low: 98,    high: 106   },
+  { patterns: ['co2', 'bicarbonate', 'hco3'],        low: 23,    high: 29    },
+  { patterns: ['calcium', 'ca'],                     low: 8.5,   high: 10.5  },
+  { patterns: ['albumin'],                           low: 3.5,   high: 5.5   },
+  { patterns: ['total protein'],                     low: 6.0,   high: 8.3   },
+  { patterns: ['bilirubin'],                         low: 0.1,   high: 1.2   },
+  { patterns: ['alkaline phosphatase', 'alp', 'alk phos'], low: 44, high: 147 },
+  { patterns: ['alt', 'alanine aminotransferase', 'sgpt'],  low: 7,  high: 56  },
+  { patterns: ['ast', 'aspartate aminotransferase', 'sgot'], low: 10, high: 40 },
+  // Hematology
+  { patterns: ['hemoglobin', 'hgb', 'hb'],          low: 12.0,  high: 17.5  },
+  { patterns: ['hematocrit', 'hct'],                 low: 36,    high: 50    },
+  { patterns: ['wbc', 'white blood cell', 'leukocyte'], low: 4.5, high: 11.0 },
+  { patterns: ['platelet', 'plt'],                   low: 150,   high: 400   },
+  { patterns: ['mcv', 'mean corpuscular volume'],    low: 80,    high: 100   },
+  // Coagulation
+  { patterns: ['inr'],                               low: null,  high: 1.1   },
+  { patterns: ['pt', 'prothrombin time'],            low: 11,    high: 13.5  },
+  // Cardiac
+  { patterns: ['troponin'],                          low: null,  high: 0.04  },
+  { patterns: ['bnp', 'b-type natriuretic'],         low: null,  high: 100   },
+  // Thyroid
+  { patterns: ['tsh'],                               low: 0.4,   high: 4.0   },
+  // Renal
+  { patterns: ['gfr', 'egfr', 'glomerular'],        low: 60,    high: null  },
+]
+
+function getCommonReferenceRange(labName: string): { low: number | null; high: number | null } | null {
+  const lower = labName.toLowerCase()
+  for (const entry of COMMON_REF_RANGES) {
+    if (entry.patterns.some(p => lower.includes(p))) {
+      return { low: entry.low, high: entry.high }
+    }
+  }
+  return null
+}
+
 export function analyzeLabTrendsLocally(summary: PatientClinicalSummary): LabTrend[] {
   const trends: LabTrend[] = []
 
@@ -370,7 +418,8 @@ export function analyzeLabTrendsLocally(summary: PatientClinicalSummary): LabTre
     if (group.readings.length === 0) continue
     if (group.readings[0].value == null) continue
 
-    const ref = group.referenceRange
+    // Use FHIR reference range, or fall back to common clinical ranges
+    const ref = group.referenceRange ?? getCommonReferenceRange(group.name)
     const readings = group.readings
       .filter(r => r.value != null)
       .map(r => ({
@@ -420,8 +469,10 @@ export function analyzeLabTrendsLocally(summary: PatientClinicalSummary): LabTre
       }
     }
 
-    // Skip stable, in-range labs — practitioner doesn't care
-    if (direction === 'stable' && !isOutOfRange) continue
+    // Include lab if: out of range, trending, OR no reference range available
+    // (if we can't verify it's normal, practitioner should see it)
+    const noRefAvailable = !ref || (ref.low == null && ref.high == null)
+    if (direction === 'stable' && !isOutOfRange && !noRefAvailable) continue
 
     trends.push({
       labName: group.name,
