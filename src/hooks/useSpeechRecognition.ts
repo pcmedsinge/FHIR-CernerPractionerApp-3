@@ -88,9 +88,29 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
     }
   }, [])
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     const SR = getSpeechRecognition()
     if (!SR) return
+
+    // Pre-check: request mic access via getUserMedia first.
+    // This is required in some browsers/contexts to "unlock" the mic
+    // before SpeechRecognition can use it.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Release the stream immediately — we just needed the permission grant
+      stream.getTracks().forEach(t => t.stop())
+    } catch (err) {
+      const mediaErr = err as DOMException
+      if (mediaErr.name === 'NotAllowedError') {
+        setError('Microphone permission denied. Click the lock icon in the address bar → allow microphone.')
+      } else if (mediaErr.name === 'NotFoundError') {
+        setError('No microphone found. Check that your headphone mic is selected as input device in system audio settings.')
+      } else {
+        setError(`Microphone access failed: ${mediaErr.message}`)
+      }
+      setListening(false)
+      return
+    }
 
     // Stop any existing session
     if (recognitionRef.current) {

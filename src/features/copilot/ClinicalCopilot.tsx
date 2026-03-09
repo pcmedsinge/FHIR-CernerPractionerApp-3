@@ -216,7 +216,7 @@ export function ClinicalCopilot({ data, loading }: ClinicalCopilotProps) {
       }
     } else {
       setInput('')
-      speech.start()
+      void speech.start()
     }
   }, [speech])
 
