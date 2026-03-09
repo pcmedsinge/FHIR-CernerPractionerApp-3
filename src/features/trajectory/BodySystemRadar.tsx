@@ -19,9 +19,9 @@ interface BodySystemRadarProps {
   systems: BodySystemScore[]
 }
 
-const SIZE = 220
+const SIZE = 280
 const CENTER = SIZE / 2
-const RADIUS = 85
+const RADIUS = 105
 const LEVELS = 5 // Concentric rings (at 2, 4, 6, 8, 10)
 
 function polarToXY(angle: number, radius: number): [number, number] {
@@ -53,7 +53,7 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
 
     // Axis lines + labels
     const axesData = systems.map((s, i) => {
-      const [x, y] = polarToXY(angles[i], RADIUS + 14)
+      const [x, y] = polarToXY(angles[i], RADIUS + 18)
       const [lineX, lineY] = polarToXY(angles[i], RADIUS)
       return { label: s.abbrev, x, y, lineX, lineY, score: s.now, delta: s.delta }
     })
@@ -70,7 +70,7 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
 
     // Delta indicators (arrows next to labels)
     const deltas = systems.map((s, i) => {
-      const [x, y] = polarToXY(angles[i], RADIUS + 26)
+      const [x, y] = polarToXY(angles[i], RADIUS + 32)
       let symbol = ''
       let color = '#94a3b8' // slate-400
       if (s.delta > 0.5) { symbol = '▲'; color = '#ef4444' }   // red — worsening
@@ -89,8 +89,8 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
   }, [systems, angleStep])
 
   return (
-    <div className="flex items-center gap-4">
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[220px] h-[220px] shrink-0">
+    <div className="flex flex-col items-center gap-3">
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[280px] h-[280px] shrink-0">
         {/* Concentric rings */}
         {rings.map((ring, i) => (
           <polygon
@@ -141,7 +141,7 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
             y={a.y}
             textAnchor="middle"
             dominantBaseline="middle"
-            className="text-[9px] font-semibold fill-slate-600 select-none"
+            className="text-[11px] font-semibold fill-slate-600 select-none"
             fontFamily="system-ui"
           >
             {a.label}
@@ -157,7 +157,7 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
             textAnchor="middle"
             dominantBaseline="middle"
             fill={d.color}
-            className="text-[8px] select-none"
+            className="text-[10px] select-none"
             fontFamily="system-ui"
           >
             {d.symbol}
@@ -169,14 +169,14 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
       </svg>
 
       {/* Legend + system list */}
-      <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="flex flex-col gap-2 w-full max-w-[340px]">
         {/* Legend */}
-        <div className="flex items-center gap-3 mb-1">
-          <span className="flex items-center gap-1.5 text-[9px] text-slate-500">
-            <span className="w-3 h-[2px] bg-blue-800 inline-block rounded" /> Now
+        <div className="flex items-center gap-4 mb-1.5">
+          <span className="flex items-center gap-2 text-[11px] text-slate-500">
+            <span className="w-4 h-[2px] bg-blue-800 inline-block rounded" /> Current
           </span>
-          <span className="flex items-center gap-1.5 text-[9px] text-slate-400">
-            <span className="w-3 h-[2px] bg-slate-400 inline-block rounded opacity-50" style={{ borderBottom: '1px dashed #94a3b8' }} /> 12h ago
+          <span className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="w-4 h-[2px] bg-slate-400 inline-block rounded opacity-50" style={{ borderBottom: '1px dashed #94a3b8' }} /> 12h ago
           </span>
         </div>
 
@@ -188,13 +188,13 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
           const barColor = s.now >= 7 ? 'bg-red-400' : s.now >= 4 ? 'bg-amber-300' : 'bg-blue-300'
 
           return (
-            <div key={s.system} className="flex items-center gap-2">
-              <span className="text-[10px] font-medium text-slate-600 w-[56px] shrink-0 truncate">{s.system}</span>
-              <div className="flex-1 h-[6px] bg-slate-100 rounded-full overflow-hidden min-w-[60px]">
+            <div key={s.system} className="flex items-center gap-2.5">
+              <span className="text-[12px] font-medium text-slate-600 w-[90px] shrink-0">{s.system}</span>
+              <div className="flex-1 h-[7px] bg-slate-100 rounded-full overflow-hidden min-w-[80px]">
                 <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${barWidth}%` }} />
               </div>
-              <span className="text-[10px] font-mono text-slate-500 w-[24px] text-right">{s.now.toFixed(1)}</span>
-              <span className={`text-[10px] w-[12px] text-center ${deltaColor}`}>{deltaSymbol}</span>
+              <span className="text-[12px] font-mono text-slate-500 w-[28px] text-right">{s.now.toFixed(1)}</span>
+              <span className={`text-[12px] w-[14px] text-center ${deltaColor}`}>{deltaSymbol}</span>
             </div>
           )
         })}

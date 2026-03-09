@@ -2,12 +2,11 @@
  * AcuityTimeline — SVG line chart showing 48h history + 12h prediction cone.
  *
  * Design:
- * - Dense, minimal, clinical — no gridlines except Y-axis severity bands
- * - Severity bands: green (0–20), yellow (20–45), amber (45–70), red (70–100)
- * - Prediction zone = hatched/shaded area widening into the future
- * - Event markers as small diamonds on the timeline
- * - Current time = vertical dashed line
- * - Responsive width, fixed height
+ * - Clean severity bands — green/yellow/amber/red
+ * - Prediction = shaded confidence cone widening into future
+ * - Event markers as labeled diamonds
+ * - Current time = "NOW" vertical marker
+ * - Fully responsive — fills container width
  */
 
 import { useMemo } from 'react'
@@ -19,19 +18,19 @@ interface AcuityTimelineProps {
   currentAcuity: number
 }
 
-// Chart dimensions
-const W = 680
-const H = 200
-const PAD = { top: 16, right: 20, bottom: 28, left: 40 }
+// Chart dimensions — wider for overlay, taller for readability
+const W = 960
+const H = 260
+const PAD = { top: 24, right: 28, bottom: 36, left: 48 }
 const CW = W - PAD.left - PAD.right
 const CH = H - PAD.top - PAD.bottom
 
 // Severity bands (y-axis zones)
 const BANDS = [
   { from: 0,  to: 20, color: '#dcfce7', label: 'Stable' },      // green-100
-  { from: 20, to: 45, color: '#fef9c3', label: 'Low-Mod' },      // yellow-100
-  { from: 45, to: 70, color: '#ffedd5', label: 'Moderate' },      // orange-100
-  { from: 70, to: 100, color: '#fee2e2', label: 'High' },         // red-100
+  { from: 20, to: 45, color: '#fef9c3', label: 'Low-Moderate' }, // yellow-100
+  { from: 45, to: 70, color: '#ffedd5', label: 'Moderate' },     // orange-100
+  { from: 70, to: 100, color: '#fee2e2', label: 'High Acuity' }, // red-100
 ]
 
 export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTimelineProps) {
@@ -81,9 +80,9 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
     // Y-axis labels
     const yLabs = [0, 25, 50, 75, 100].map(v => ({ y: ty(v), label: String(v) }))
 
-    // Time labels (every 12h)
+    // Time labels (every 8h for better resolution in overlay)
     const timeLabs: Array<{ x: number; label: string }> = []
-    const step = 12 * 60 * 60 * 1000
+    const step = 8 * 60 * 60 * 1000
     const startT = Math.ceil(minT / step) * step
     for (let t = startT; t <= maxT; t += step) {
       const d = new Date(t)
@@ -105,15 +104,15 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
   }, [history, prediction])
 
   if (history.length === 0) {
-    return <div className="text-[11px] text-slate-400 italic py-4 text-center">Insufficient data for timeline</div>
+    return <div className="text-[13px] text-slate-400 italic py-6 text-center">Insufficient data for timeline</div>
   }
 
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="w-full">
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full max-w-[680px]"
-        style={{ minWidth: 480 }}
+        className="w-full"
+        preserveAspectRatio="xMidYMid meet"
       >
         {/* Severity bands */}
         {BANDS.map(band => (
@@ -134,7 +133,7 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
             key={`lbl-${band.from}`}
             x={PAD.left + 3}
             y={PAD.top + CH - ((band.from + band.to) / 200) * CH + 3}
-            className="text-[7px] fill-slate-400 select-none"
+            className="text-[10px] fill-slate-400 select-none"
             fontFamily="system-ui"
           >
             {band.label}
@@ -148,7 +147,7 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
             x={PAD.left - 6}
             y={yl.y + 3}
             textAnchor="end"
-            className="text-[8px] fill-slate-400 select-none"
+            className="text-[10px] fill-slate-400 select-none"
             fontFamily="system-ui"
           >
             {yl.label}
@@ -162,7 +161,7 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
             x={tl.x}
             y={H - 4}
             textAnchor="middle"
-            className="text-[8px] fill-slate-400 select-none"
+            className="text-[10px] fill-slate-400 select-none"
             fontFamily="system-ui"
           >
             {tl.label}
@@ -178,7 +177,7 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
           x={nowX}
           y={PAD.top - 4}
           textAnchor="middle"
-          className="text-[7px] fill-slate-500 font-semibold select-none"
+          className="text-[10px] fill-slate-500 font-semibold select-none"
           fontFamily="system-ui"
         >
           NOW
@@ -208,7 +207,7 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
         />
 
         {/* Current acuity dot */}
-        <circle cx={nowX} cy={PAD.top + CH - (currentAcuity / 100) * CH} r={4} fill="#1e40af" stroke="#fff" strokeWidth={1.5} />
+        <circle cx={nowX} cy={PAD.top + CH - (currentAcuity / 100) * CH} r={5} fill="#1e40af" stroke="#fff" strokeWidth={2} />
 
         {/* Event markers */}
         {eventMarkers.map((m, i) => (
@@ -217,13 +216,13 @@ export function AcuityTimeline({ history, prediction, currentAcuity }: AcuityTim
               points={`${m.x},${m.y - 5} ${m.x + 4},${m.y} ${m.x},${m.y + 5} ${m.x - 4},${m.y}`}
               fill="#f59e0b"
               stroke="#fff"
-              strokeWidth={1}
+              strokeWidth={1.5}
             />
             <text
               x={m.x}
-              y={m.y - 8}
+              y={m.y - 10}
               textAnchor="middle"
-              className="text-[6px] fill-slate-500 select-none"
+              className="text-[9px] fill-slate-600 font-medium select-none"
               fontFamily="system-ui"
             >
               {m.label}
