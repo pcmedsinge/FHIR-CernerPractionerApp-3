@@ -9,12 +9,14 @@ interface AppShellProps {
 	children: ReactNode
 }
 
-export function AppShell({ title, subtitle, patientLabel, navItems, children }: AppShellProps) {
+export function AppShell({ subtitle, patientLabel, navItems, children }: AppShellProps) {
 	return (
 		<main className="h-screen flex flex-col overflow-hidden bg-surface text-slate-900 font-[Inter,system-ui,-apple-system,sans-serif]">
 			{/* ── Unified header — 36px, dark glass, patient context included ── */}
-			<header className="shrink-0 h-9 px-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center gap-3 backdrop-blur-md shadow-[0_1px_4px_rgba(0,0,0,0.25)]">
-				<h1 className="m-0 text-[13px] font-bold tracking-tight whitespace-nowrap">{title}</h1>
+			<header className="shrink-0 h-11 px-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center gap-3 backdrop-blur-md shadow-[0_1px_4px_rgba(0,0,0,0.25)]">
+				<h1 className="m-0 text-[15px] font-extrabold tracking-tight whitespace-nowrap">
+					<span className="text-blue-400">Practitioner</span><span className="text-white">Hub</span>
+				</h1>
 				{subtitle && !patientLabel ? (
 					<span className="text-[11px] text-slate-400 truncate">{subtitle}</span>
 				) : null}

@@ -22,7 +22,6 @@ import type { NEWS2Result } from '../../utils/risk-scores/news2'
 import {
   IconAlert,
   IconCheckCircle,
-  IconStethoscope,
   IconRefresh,
   IconBrain,
   IconWarning,
@@ -111,7 +110,6 @@ export function PatientBriefing() {
 
         {/* ═══ ACTION BAR ═══ */}
         <ActionBar
-          practitionerName={data.practitionerName}
           tier1Loading={tier1Loading}
           tier2Loading={tier2Loading}
           onRefresh={refreshAll}
@@ -158,8 +156,7 @@ export function PatientBriefing() {
           onVitalsRecorded={handleVitalsSaved}
         />
 
-        {/* ═══ DATA QUALITY ═══ */}
-        <DataQualityFooter data={data} />
+
       </div>
 
       {/* ═══ NOTES SLIDE-OUT ═══ */}
@@ -201,7 +198,6 @@ function NEWS2Banner({ news2 }: { news2: NEWS2Result }) {
 // ---------------------------------------------------------------------------
 
 function ActionBar({
-  practitionerName,
   tier1Loading,
   tier2Loading,
   onRefresh,
@@ -209,7 +205,6 @@ function ActionBar({
   onOpenNotes,
   noteAvailable,
 }: {
-  practitionerName: string
   tier1Loading: boolean
   tier2Loading: boolean
   onRefresh: () => void
@@ -218,10 +213,7 @@ function ActionBar({
   noteAvailable: boolean
 }) {
   return (
-    <div className="flex items-center justify-between flex-wrap gap-1.5">
-      <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-1.5">
-        <IconStethoscope size={14} /> {practitionerName}
-      </span>
+    <div className="flex items-center justify-end flex-wrap gap-1.5">
       <div className="flex items-center gap-1.5">
         {!isAIConfigured() && (
           <span className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium">
@@ -541,36 +533,5 @@ function NoteSlideOut({
         </div>
       </div>
     </>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// DataQualityFooter — minimal
-// ---------------------------------------------------------------------------
-
-function DataQualityFooter({ data }: { data: BriefingData }) {
-  if (!data.summaryMeta) return null
-  const { summaryMeta, aiError } = data
-  const hasErrors = summaryMeta.errors.length > 0
-
-  // Minimal: status dot + time + optional error hint
-  const dotColor = hasErrors || aiError
-    ? 'bg-amber-400'
-    : summaryMeta.populatedCategories >= 4
-      ? 'bg-green-400'
-      : 'bg-slate-300'
-
-  return (
-    <div className="flex items-center gap-2 text-[10px] text-slate-400 pt-1 pb-0.5">
-      <span className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0`} />
-      <span>{summaryMeta.populatedCategories}/5 data</span>
-      <span className="text-slate-300">·</span>
-      <span>{new Date(summaryMeta.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-      {hasErrors && (
-        <span className="text-amber-500">
-          · {summaryMeta.errors.length} fetch error{summaryMeta.errors.length > 1 ? 's' : ''}
-        </span>
-      )}
-    </div>
   )
 }
