@@ -1,19 +1,19 @@
 /**
  * usePatientBriefing — unified hook replacing usePatientDashboard + InsightsView fetch logic.
  *
- * Progressive two-tier data loading with staleness-based cache:
+ * Three-layer loading strategy:
  *
- * Tier 1 (critical path, renders in ~1-2s):
- *   - Practitioner name
- *   - Patient demographics
- *   - Vitals (8 parallel LOINC queries)
- *   - Conditions (for risk scores)
- *   → Computes risk scores locally (instant)
+ * Layer 0 — Instant paint (<100ms):
+ *   sessionStorage snapshot from previous load. Dashboard appears immediately
+ *   with stale-but-valid data. "Refreshing…" indicator shown.
  *
- * Tier 2 (background, 2-5s after Tier 1):
- *   - Medications, Allergies, Labs (3 parallel queries)
- *   - AI analysis (after data gathered)
- *   → Renders insight cards + lab trend charts
+ * Layer 1 — FHIR refresh (all calls in ONE parallel batch):
+ *   Practitioner + Demographics + Vitals (8 LOINC queries) + Conditions +
+ *   Medications + Allergies + Labs — ALL fired simultaneously.
+ *   Risk scores computed locally. Dashboard re-renders with fresh data.
+ *
+ * Layer 2 — AI analysis (fires immediately after Layer 1):
+ *   OpenAI insight cards + lab trend analysis. Updates insight cards.
  *
  * Staleness thresholds:
  *   Demographics: Infinity (never changes mid-session)
@@ -219,18 +219,66 @@ const DEFAULT_CONDITIONS: PatientConditions = {
 }
 
 // ---------------------------------------------------------------------------
+// SessionStorage persistence — instant first paint from cached snapshot
+// ---------------------------------------------------------------------------
+
+const SESSION_CACHE_KEY = 'practitionerhub.briefing.snapshot'
+const SESSION_CACHE_MAX_AGE = 10 * 60_000 // 10 min — after this, don't use snapshot
+
+interface BriefingSnapshot {
+  data: BriefingData
+  patientId: string
+  savedAt: number
+}
+
+function readSnapshot(patientId: string): BriefingData | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_CACHE_KEY)
+    if (!raw) return null
+    const snap = JSON.parse(raw) as BriefingSnapshot
+    if (snap.patientId !== patientId) return null
+    if (Date.now() - snap.savedAt > SESSION_CACHE_MAX_AGE) return null
+    return snap.data
+  } catch {
+    return null
+  }
+}
+
+function writeSnapshot(data: BriefingData, patientId: string): void {
+  try {
+    const snap: BriefingSnapshot = { data, patientId, savedAt: Date.now() }
+    sessionStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(snap))
+  } catch {
+    // quota exceeded — non-fatal
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
 export function usePatientBriefing(): UsePatientBriefingResult {
   const { session } = useAuth()
-  const [data, setData] = useState<BriefingData | null>(null)
+  const [data, setData] = useState<BriefingData | null>(() => {
+    // Layer 0: instant paint from sessionStorage snapshot
+    if (session?.patientId) {
+      const snap = readSnapshot(session.patientId)
+      if (snap) {
+        console.log('[Briefing] ⚡ Layer 0: instant paint from cached snapshot')
+        return snap
+      }
+    }
+    return null
+  })
   const [tier1Loading, setTier1Loading] = useState(true)
-  const [tier2Loading, setTier2Loading] = useState(true)  // starts true — Tier 2 is pending
+  const [tier2Loading, setTier2Loading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const mountedRef = useRef(true)
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined)
+  // Keep a ref to latest data so loadAll callback always has current state
+  const dataRef = useRef(data)
+  dataRef.current = data
 
   // ── Cache refs ──────────────────────────────────────────────────────────
   const demoCache = useRef<CacheEntry<{ age: string; gender: string }> | null>(null)
@@ -426,6 +474,8 @@ export function usePatientBriefing(): UsePatientBriefingResult {
 
       // Build clinical summary (all data already available — no second round trip!)
       const errors: string[] = []
+      if (vitalsR.status === 'rejected') errors.push(`Vitals: ${String(vitalsR.reason)}`)
+      if (conditionsR.status === 'rejected') errors.push(`Conditions: ${String(conditionsR.reason)}`)
       if (medsR.status === 'rejected') errors.push(`Medications: ${String(medsR.reason)}`)
       if (allergiesR.status === 'rejected') errors.push(`Allergies: ${String(allergiesR.reason)}`)
       if (labsR.status === 'rejected') errors.push(`Labs: ${String(labsR.reason)}`)
@@ -445,7 +495,8 @@ export function usePatientBriefing(): UsePatientBriefingResult {
       const localTrends = analyzeLabTrendsLocally(summary)
 
       // Paint T1 + local lab trends
-      setData(prev => ({
+      const prev = dataRef.current
+      const tier1Data: BriefingData = {
         insights: prev?.insights ?? [],
         labTrends: localTrends,
         allClear: prev?.allClear ?? false,
@@ -455,8 +506,12 @@ export function usePatientBriefing(): UsePatientBriefingResult {
         clinicalSummary: summary,
         vitals, vitalGroups, riskScores, maxSeverity, conditionFlags, hasVitals,
         practitionerName: practName,
-      }))
+      }
+      setData(tier1Data)
       setTier1Loading(false)
+
+      // Save snapshot for instant paint on next visit
+      if (patientId) writeSnapshot(tier1Data, patientId)
       console.log(`[Briefing] 🎨 Tier 1 painted at ${(performance.now() - t0).toFixed(0)}ms`)
 
       // ── Fire AI analysis (non-blocking for T1 render) ───────────────
@@ -478,14 +533,20 @@ export function usePatientBriefing(): UsePatientBriefingResult {
             aiDataVersion.current = currentVersion
           }
 
-          setData(prev => prev ? {
-            ...prev,
-            insights: analysis.insights,
-            labTrends: analysis.labTrends.length > 0 ? analysis.labTrends : localTrends,
-            allClear: analysis.allClear,
-            aiError: analysis.error,
-            tokenUsage: analysis.tokenUsage,
-          } : prev)
+          setData(prev => {
+            if (!prev) return prev
+            const updated = {
+              ...prev,
+              insights: analysis.insights,
+              labTrends: analysis.labTrends.length > 0 ? analysis.labTrends : localTrends,
+              allClear: analysis.allClear,
+              aiError: analysis.error,
+              tokenUsage: analysis.tokenUsage,
+            }
+            // Save complete snapshot (with AI data) for next visit
+            if (patientId) writeSnapshot(updated, patientId)
+            return updated
+          })
         } catch (err) {
           if (!mountedRef.current) return
           setData(prev => prev ? { ...prev, aiError: err instanceof Error ? err.message : 'Analysis failed' } : prev)

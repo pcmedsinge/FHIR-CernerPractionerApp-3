@@ -156,7 +156,7 @@ function nextLink(bundle: ObservationBundle): string | null {
 }
 
 async function fetchBundle(url: string, token: string, signal: AbortSignal): Promise<ObservationBundle> {
-  return fhirFetch<ObservationBundle>(url, token, { signal, timeout: 15_000 })
+  return fhirFetch<ObservationBundle>(url, token, { signal, timeout: 30_000 })
 }
 
 // ---------------------------------------------------------------------------
