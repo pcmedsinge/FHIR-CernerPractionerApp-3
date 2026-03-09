@@ -19,13 +19,13 @@ import { INSIGHT_ICON } from '../../components/icons/ClinicalIcons'
 const SEVERITY_STYLES: Record<ClinicalInsight['severity'], { border: string; bg: string; badge: string; badgeText: string }> = {
   critical: {
     border: 'border-l-red-500',
-    bg: 'bg-red-50',
+    bg: 'bg-white',
     badge: 'bg-red-100 text-red-800',
     badgeText: 'CRITICAL',
   },
   warning: {
     border: 'border-l-amber-500',
-    bg: 'bg-amber-50',
+    bg: 'bg-white',
     badge: 'bg-amber-100 text-amber-800',
     badgeText: 'WARNING',
   },

@@ -62,9 +62,11 @@ interface NotePanelProps {
   riskScores: RiskScores
   /** Whether tier2 data is still loading (disable generate until ready) */
   dataLoading: boolean
+  /** When true, renders inside a slide-out panel (no outer card, taller textarea) */
+  isSlideOut?: boolean
 }
 
-export function NotePanel({ summary, insights, labTrends, riskScores, dataLoading }: NotePanelProps) {
+export function NotePanel({ summary, insights, labTrends, riskScores, dataLoading, isSlideOut = false }: NotePanelProps) {
   const { session } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [format, setFormat] = useState<NoteFormat>('soap')
@@ -250,9 +252,9 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
   const canGenerate = !generating && !dataLoading && !!summary && isAIConfigured()
   const canSave = !!noteContent && !generating && !saving && !!session
 
-  // ── Collapsed state — single-line bar ─────────────────────────────
+  // ── Collapsed state — single-line bar (skip in slide-out mode) ────
 
-  if (!expanded && status === 'idle') {
+  if (!isSlideOut && !expanded && status === 'idle') {
     return (
       <section className="border border-card-border rounded-xl shadow-card overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 bg-slate-50">
@@ -292,12 +294,16 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
     )
   }
 
-  // ── Expanded state ────────────────────────────────────────────────
+  // ── Expanded state (or always when isSlideOut) ────────────────────
+
+  const wrapperClass = isSlideOut
+    ? 'flex flex-col flex-1'
+    : `border rounded-xl shadow-card overflow-hidden transition-colors duration-200 ${STATUS_CLASSES[status]}`
 
   return (
-    <section className={`border rounded-xl shadow-card overflow-hidden transition-colors duration-200 ${STATUS_CLASSES[status]}`}>
+    <section className={wrapperClass}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-inherit bg-inherit">
+      <div className={`flex items-center justify-between px-3 py-2 border-b ${isSlideOut ? 'border-card-border bg-white' : 'border-inherit bg-inherit'}`}>
         <button
           type="button"
           className="flex items-center gap-2 bg-transparent border-none cursor-pointer text-left p-0"
@@ -377,14 +383,16 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
             )}
           </button>
 
-          {/* Collapse */}
-          <button
-            type="button"
-            className="text-[10px] text-slate-400 bg-transparent border-none cursor-pointer px-1 hover:text-slate-600"
-            onClick={() => setExpanded(false)}
-          >
-            ▲
-          </button>
+          {/* Collapse (hidden in slide-out mode — the panel has its own close) */}
+          {!isSlideOut && (
+            <button
+              type="button"
+              className="text-[10px] text-slate-400 bg-transparent border-none cursor-pointer px-1 hover:text-slate-600"
+              onClick={() => setExpanded(false)}
+            >
+              ▲
+            </button>
+          )}
         </div>
       </div>
 
@@ -435,12 +443,12 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
         </div>
       )}
 
-      {/* Note content (editable) — constrained height, internal scroll */}
+      {/* Note content (editable) */}
       {noteContent && !generating && (
-        <div className="flex flex-col">
+        <div className={`flex flex-col ${isSlideOut ? 'flex-1' : ''}`}>
           <textarea
             ref={textareaRef}
-            className="w-full h-48 px-4 py-3 text-[13px] font-mono leading-relaxed text-slate-800 bg-transparent border-none outline-none resize-none overflow-y-auto"
+            className={`w-full px-4 py-3 text-[13px] leading-relaxed text-slate-800 bg-transparent border-none outline-none resize-none overflow-y-auto ${isSlideOut ? 'flex-1 min-h-[300px]' : 'h-48'}`}
             value={noteContent}
             onChange={e => handleContentChange(e.target.value)}
             spellCheck
