@@ -60,6 +60,8 @@ export interface UseSpeechRecognitionResult {
   listening: boolean
   /** Current transcript (interim + final combined) */
   transcript: string
+  /** Error message if recognition failed */
+  error: string | null
   /** Start listening */
   start: () => void
   /** Stop and finalize — returns the final transcript */
@@ -71,6 +73,7 @@ export interface UseSpeechRecognitionResult {
 export function useSpeechRecognition(): UseSpeechRecognitionResult {
   const [listening, setListening] = useState(false)
   const [transcript, setTranscript] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const finalTranscriptRef = useRef('')
   const supported = typeof window !== 'undefined' && getSpeechRecognition() !== null
@@ -101,6 +104,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
 
     finalTranscriptRef.current = ''
     setTranscript('')
+    setError(null)
 
     recognition.onstart = () => {
       setListening(true)
@@ -124,9 +128,19 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
     }
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      // 'no-speech' and 'aborted' are expected — don't treat as failures
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        console.warn('[SpeechRecognition] error:', event.error)
+      const ERROR_MESSAGES: Record<string, string> = {
+        'not-allowed': 'Microphone permission denied. Check browser settings.',
+        'no-speech': 'No speech detected. Try speaking louder.',
+        'audio-capture': 'No microphone found. Check your audio input device.',
+        'network': 'Network error. Speech recognition requires an internet connection.',
+        'service-not-allowed': 'Speech service not available in this browser.',
+      }
+
+      const msg = ERROR_MESSAGES[event.error] || `Speech error: ${event.error}`
+      console.warn('[SpeechRecognition] error:', event.error, event.message)
+
+      if (event.error !== 'aborted') {
+        setError(msg)
       }
       setListening(false)
     }
@@ -163,5 +177,5 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
     finalTranscriptRef.current = ''
   }, [])
 
-  return { supported, listening, transcript, start, stop, cancel }
+  return { supported, listening, transcript, error, start, stop, cancel }
 }
