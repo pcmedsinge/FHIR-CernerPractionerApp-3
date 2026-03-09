@@ -11,7 +11,6 @@
 
 import { useState, useCallback, lazy, Suspense } from 'react'
 import { usePatientBriefing, type BriefingData } from '../../hooks/usePatientBriefing'
-import type { LabGroup } from '../../services/fhir/labs'
 import { InsightCard } from '../insights/InsightCard'
 import { LabTrendChart } from '../insights/LabTrendChart'
 import { NotePanel } from '../notes/NotePanel'
@@ -153,13 +152,6 @@ export function PatientBriefing() {
                 <LabTrendChart key={trend.labName} trend={trend} />
               ))}
             </div>
-          </SectionCard>
-        )}
-
-        {/* ═══ LAB RESULTS ═══ */}
-        {data.labGroups.length > 0 && (
-          <SectionCard title="Lab Results" subtitle={`${data.labGroups.length} tests · ${data.labGroups.reduce((n, g) => n + g.readings.length, 0)} readings`}>
-            <LabResultsGrid labGroups={data.labGroups} />
           </SectionCard>
         )}
 
@@ -401,65 +393,6 @@ const COMPACT_VITALS: Array<{
   { key: 'spo2', vitalType: 'spo2', label: 'SpO₂', unit: '%' },
   { key: 'temperature', vitalType: 'temperature', label: 'Temp', unit: '°C' },
 ]
-
-// ---------------------------------------------------------------------------
-// LabResultsGrid — compact lab results with reference range highlighting
-// ---------------------------------------------------------------------------
-
-function LabResultsGrid({ labGroups }: { labGroups: LabGroup[] }) {
-  return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
-      {labGroups.map(group => {
-        const latest = group.readings[0]
-        if (!latest) return null
-
-        const ref = group.referenceRange
-        const val = latest.value
-        let status: 'normal' | 'high' | 'low' | 'unknown' = 'unknown'
-        if (val != null && ref) {
-          if (ref.high != null && val > ref.high) status = 'high'
-          else if (ref.low != null && val < ref.low) status = 'low'
-          else status = 'normal'
-        } else if (val != null) {
-          status = 'normal'
-        }
-
-        const borderColor = status === 'high' || status === 'low' ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'
-        const valueColor = status === 'high' || status === 'low' ? 'text-red-600' : 'text-slate-800'
-        const refStr = ref
-          ? `${ref.low ?? '—'}–${ref.high ?? '—'}`
-          : ''
-
-        const dateStr = latest.timestamp
-          ? new Date(latest.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-          : ''
-
-        return (
-          <div key={group.name} className={`border rounded-lg px-3 py-2 ${borderColor}`}>
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-[11px] font-medium text-slate-500 truncate">{group.name}</span>
-              <span className="text-[10px] text-slate-400 shrink-0">{group.readings.length} reading{group.readings.length > 1 ? 's' : ''}</span>
-            </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className={`text-[16px] font-bold ${valueColor} leading-none`}>
-                {val != null ? val : '—'}
-              </span>
-              {group.unit && (
-                <span className="text-[11px] text-slate-400">{group.unit}</span>
-              )}
-            </div>
-            <div className="flex items-center justify-between mt-1.5">
-              {refStr && (
-                <span className="text-[10px] text-slate-400">Ref: {refStr}</span>
-              )}
-              <span className="text-[10px] text-slate-400">{dateStr}</span>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // CompactVitals — inline vital signs display

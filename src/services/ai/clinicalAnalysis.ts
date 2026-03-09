@@ -367,7 +367,7 @@ export function analyzeLabTrendsLocally(summary: PatientClinicalSummary): LabTre
   const trends: LabTrend[] = []
 
   for (const group of summary.labs) {
-    if (group.readings.length < 2) continue
+    if (group.readings.length === 0) continue
     if (group.readings[0].value == null) continue
 
     const ref = group.referenceRange
@@ -379,40 +379,43 @@ export function analyzeLabTrendsLocally(summary: PatientClinicalSummary): LabTre
       }))
       .reverse() // Oldest first for charting
 
-    if (readings.length < 2) continue
+    if (readings.length === 0) continue
 
     const latest = readings[readings.length - 1].value
-    const previous = readings[readings.length - 2].value
-    const diff = latest - previous
 
-    // Only flag problematic trends
+    // Flag if current value is out of reference range
     const isOutOfRange = ref
       ? (ref.low != null && latest < ref.low) || (ref.high != null && latest > ref.high)
       : false
 
-    // Calculate trend direction
+    // Calculate trend direction (needs 2+ readings)
     let direction: 'rising' | 'falling' | 'stable' = 'stable'
-    const pctChange = previous !== 0 ? Math.abs(diff / previous) : 0
-    if (pctChange > 0.05) { // >5% change is meaningful
-      direction = diff > 0 ? 'rising' : 'falling'
-    }
-
-    // Estimate days to threshold (simple linear extrapolation)
     let daysToThreshold: number | null = null
-    if (direction !== 'stable' && ref && readings.length >= 3) {
-      const first = readings[0]
-      const last = readings[readings.length - 1]
-      const daysBetween = (new Date(last.date).getTime() - new Date(first.date).getTime()) / (86_400_000)
-      if (daysBetween > 0) {
-        const ratePerDay = (last.value - first.value) / daysBetween
-        if (ratePerDay !== 0) {
-          if (direction === 'rising' && ref.high != null && latest < ref.high) {
-            daysToThreshold = Math.round((ref.high - latest) / ratePerDay)
-          } else if (direction === 'falling' && ref.low != null && latest > ref.low) {
-            daysToThreshold = Math.round((latest - ref.low) / Math.abs(ratePerDay))
+
+    if (readings.length >= 2) {
+      const previous = readings[readings.length - 2].value
+      const diff = latest - previous
+      const pctChange = previous !== 0 ? Math.abs(diff / previous) : 0
+      if (pctChange > 0.05) { // >5% change is meaningful
+        direction = diff > 0 ? 'rising' : 'falling'
+      }
+
+      // Estimate days to threshold (simple linear extrapolation)
+      if (direction !== 'stable' && ref && readings.length >= 3) {
+        const first = readings[0]
+        const last = readings[readings.length - 1]
+        const daysBetween = (new Date(last.date).getTime() - new Date(first.date).getTime()) / (86_400_000)
+        if (daysBetween > 0) {
+          const ratePerDay = (last.value - first.value) / daysBetween
+          if (ratePerDay !== 0) {
+            if (direction === 'rising' && ref.high != null && latest < ref.high) {
+              daysToThreshold = Math.round((ref.high - latest) / ratePerDay)
+            } else if (direction === 'falling' && ref.low != null && latest > ref.low) {
+              daysToThreshold = Math.round((latest - ref.low) / Math.abs(ratePerDay))
+            }
+            // Only keep positive estimates
+            if (daysToThreshold != null && daysToThreshold <= 0) daysToThreshold = null
           }
-          // Only keep positive estimates
-          if (daysToThreshold != null && daysToThreshold <= 0) daysToThreshold = null
         }
       }
     }

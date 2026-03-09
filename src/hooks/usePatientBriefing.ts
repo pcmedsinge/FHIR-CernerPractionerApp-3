@@ -53,8 +53,6 @@ export interface BriefingData {
   maxSeverity: PatientClinicalData['maxSeverity']
   conditionFlags: string[]
   hasVitals: boolean
-  /** Raw lab groups from FHIR — available after Tier 1 FHIR fetch */
-  labGroups: LabGroup[]
 
   // Tier 2 (AI)
   insights: ClinicalInsight[]
@@ -240,8 +238,6 @@ function readSnapshot(patientId: string): BriefingData | null {
     const snap = JSON.parse(raw) as BriefingSnapshot
     if (snap.patientId !== patientId) return null
     if (Date.now() - snap.savedAt > SESSION_CACHE_MAX_AGE) return null
-    // Backcompat: older snapshots may lack labGroups
-    if (!snap.data.labGroups) snap.data.labGroups = []
     return snap.data
   } catch {
     return null
@@ -351,7 +347,7 @@ export function usePatientBriefing(): UsePatientBriefingResult {
       }
 
       const localTrends = analyzeLabTrendsLocally(summary)
-      setData(prev => prev ? { ...prev, labTrends: localTrends, labGroups: labs, summaryMeta: summary.meta, clinicalSummary: summary } : prev)
+      setData(prev => prev ? { ...prev, labTrends: localTrends, summaryMeta: summary.meta, clinicalSummary: summary } : prev)
 
       let analysis: ClinicalAnalysisResult
       if (aiCache.current && aiDataVersion.current === currentVersion) {
@@ -510,7 +506,6 @@ export function usePatientBriefing(): UsePatientBriefingResult {
         clinicalSummary: summary,
         vitals, vitalGroups, riskScores, maxSeverity, conditionFlags, hasVitals,
         practitionerName: practName,
-        labGroups: labs,
       }
       setData(tier1Data)
       setTier1Loading(false)
