@@ -266,8 +266,19 @@ function ActionBar({
 // ---------------------------------------------------------------------------
 
 function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loading: boolean }) {
+  // Insight cards — show first if we have any (from AI or local vitals)
+  if (data.insights.length > 0) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        {data.insights.map(insight => (
+          <InsightCard key={insight.id} insight={insight} />
+        ))}
+      </div>
+    )
+  }
+
   // Still loading Tier 2
-  if (tier2Loading && data.insights.length === 0 && !data.aiError) {
+  if (tier2Loading && !data.aiError) {
     return (
       <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl shadow-card">
         <div className="w-4 h-4 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spinner shrink-0" />
@@ -279,8 +290,8 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
     )
   }
 
-  // AI error
-  if (data.aiError && data.insights.length === 0 && !data.allClear) {
+  // AI error (but no insights from local fallback either)
+  if (data.aiError && !data.allClear) {
     return (
       <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl shadow-card">
         <IconWarning size={14} className="text-amber-500 shrink-0" />
@@ -290,7 +301,7 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
   }
 
   // All Clear
-  if (data.allClear && data.insights.length === 0) {
+  if (data.allClear) {
     return (
       <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-card">
         <IconCheckCircle size={14} className="text-green-500" />
@@ -298,17 +309,6 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
           No critical alerts
           {data.labTrends.length > 0 && ` · ${data.labTrends.length} lab trend${data.labTrends.length > 1 ? 's' : ''} below`}
         </p>
-      </div>
-    )
-  }
-
-  // Insight cards
-  if (data.insights.length > 0) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        {data.insights.map(insight => (
-          <InsightCard key={insight.id} insight={insight} />
-        ))}
       </div>
     )
   }

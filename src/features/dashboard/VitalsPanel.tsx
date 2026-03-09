@@ -4,7 +4,6 @@ import {
   getVitalSigns,
   getVitalsByType,
   getVitalStatus,
-  runCreateDiagnostics,
   VITAL_LABELS,
   VITAL_RANGES,
   BP_RANGES,
@@ -224,14 +223,6 @@ export function VitalsPanel({ onVitalsRecorded }: VitalsPanelProps) {
   const [recordOpen, setRecordOpen] = useState(false)
   // Inline save status — visible in the header so user always sees POST outcome
   const [saveStatus, setSaveStatus] = useState<{ text: string; type: 'saving' | 'ok' | 'fail' } | null>(null)
-  // Debug log entries visible in-app (since F12 doesn't work inside EHR iframe)
-  const [debugLogs, setDebugLogs] = useState<string[]>([])
-  const [debugOpen, setDebugOpen] = useState(false)
-  const [diagRunning, setDiagRunning] = useState(false)
-  const appendDebug = useCallback((msg: string) => {
-    const ts = new Date().toLocaleTimeString()
-    setDebugLogs(prev => [`[${ts}] ${msg}`, ...prev].slice(0, 50))
-  }, [])
 
   const patientId = session?.patientId ?? ''
   const accessToken = session?.accessToken ?? ''
@@ -469,7 +460,7 @@ export function VitalsPanel({ onVitalsRecorded }: VitalsPanelProps) {
         open={recordOpen}
         onClose={() => setRecordOpen(false)}
         onSaved={handleVitalsSaved}
-        onDebug={appendDebug}
+        onDebug={() => {}}
         onSaveStatus={(s) => {
           setSaveStatus(s)
           // Auto-clear terminal states (ok/fail) after 15 seconds.
@@ -501,75 +492,6 @@ export function VitalsPanel({ onVitalsRecorded }: VitalsPanelProps) {
             onLoadMore={loadMoreReadings}
           />
         ))}
-      </div>
-
-      {/* In-app debug panel — togglable, shows session context + POST details + errors */}
-      <div className="mt-4 border border-slate-700 rounded-lg bg-slate-950 overflow-hidden">
-        <button
-          type="button"
-          className="w-full px-3 py-2 bg-slate-800 border-none text-slate-400 text-xs font-mono cursor-pointer text-left hover:bg-slate-700 hover:text-slate-200"
-          onClick={() => setDebugOpen(p => !p)}
-        >
-          {debugOpen ? '▼' : '▶'} Debug Log ({debugLogs.length})
-        </button>
-        {debugOpen && (
-          <div className="px-3 py-2">
-            <div className="px-2 py-1.5 mb-2 bg-slate-800 rounded text-amber-400 font-mono text-[11px] leading-relaxed break-all select-all">
-              <strong>Session:</strong>
-              patientId={session?.patientId ?? 'NULL'}
-              {' | '}practitionerId={session?.practitionerId ?? 'NULL'}
-              {' | '}encounterId={session?.encounterId ?? 'NULL'}
-              {' | '}fhirUser={session?.fhirUser ?? 'NULL'}
-              {' | '}scope={session?.scope ?? 'NULL'}
-            </div>
-            <div className="flex gap-2 my-1.5">
-              <button
-                type="button"
-                className="px-2.5 py-1 bg-red-800 border-none rounded text-red-200 text-[11px] cursor-pointer hover:bg-red-700 disabled:opacity-50"
-                disabled={diagRunning}
-                onClick={async () => {
-                  setDiagRunning(true)
-                  appendDebug('=== DIAGNOSTIC TESTS START ===')
-                  try {
-                    await runCreateDiagnostics(
-                      session?.patientId ?? '',
-                      session?.practitionerId ?? null,
-                      session?.encounterId ?? null,
-                      accessToken,
-                      (result) => {
-                        const tag = result.success ? '[OK]' : '[FAIL]'
-                        const status = result.status != null ? ` HTTP ${result.status}` : ''
-                        appendDebug(`${tag} [${result.testName}]${status}\n${result.detail}\nPayload:\n${result.payload}`)
-                      },
-                    )
-                  } catch (e) {
-                    appendDebug(`DIAG FATAL: ${String(e)}`)
-                  }
-                  appendDebug('=== DIAGNOSTIC TESTS END ===')
-                  setDiagRunning(false)
-                }}
-              >
-                {diagRunning ? 'Running…' : 'Run Diagnostic Tests'}
-              </button>
-              <button
-                type="button"
-                className="px-2.5 py-1 bg-red-800 border-none rounded text-red-200 text-[11px] cursor-pointer hover:bg-red-700"
-                onClick={() => setDebugLogs([])}
-              >
-                Clear
-              </button>
-            </div>
-            {debugLogs.length === 0 ? (
-              <div className="text-slate-500 text-xs italic py-1">No log entries yet. Try saving a vital sign or run diagnostics.</div>
-            ) : (
-              <div className="max-h-[300px] overflow-y-auto">
-                {debugLogs.map((log, i) => (
-                  <pre key={i} className="m-0 mb-0.5 px-1.5 py-[3px] bg-slate-800 rounded-sm text-slate-200 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all select-all">{log}</pre>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </section>
   )

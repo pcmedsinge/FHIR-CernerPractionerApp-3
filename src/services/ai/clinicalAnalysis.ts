@@ -189,6 +189,180 @@ function buildUserPrompt(summary: PatientClinicalSummary): string {
 // Local (non-AI) trend analysis — runs even without OpenAI key
 // ---------------------------------------------------------------------------
 
+/**
+ * Generate rule-based clinical alerts from vitals data.
+ * These ALWAYS run regardless of AI availability — critical safety net.
+ */
+function generateLocalVitalsInsights(summary: PatientClinicalSummary): ClinicalInsight[] {
+  const insights: ClinicalInsight[] = []
+  let idx = 0
+
+  // Helper: get latest numeric value for a vital type
+  const getLatest = (label: string): { value: number; display: string; unit: string } | null => {
+    const group = summary.vitals.find(g => g.label.toLowerCase().includes(label.toLowerCase()))
+    if (!group || group.readings.length === 0) return null
+    const r = group.readings[0]
+    const val = r.numericValue ?? (r.displayValue ? parseFloat(r.displayValue) : null)
+    if (val == null || isNaN(val)) return null
+    return { value: val, display: r.displayValue, unit: r.unit }
+  }
+
+  // --- Respiratory Rate ---
+  const rr = getLatest('respiratory')
+  if (rr) {
+    if (rr.value >= 30) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'critical',
+        headline: `Respiratory Rate critically elevated: ${rr.display} ${rr.unit}`,
+        detail: `RR of ${rr.value} is significantly above normal range (12-20 br/min). This may indicate respiratory distress, sepsis, or metabolic acidosis. Immediate assessment required.`,
+        source: 'NEWS2 Clinical Guidelines',
+        suggestedAction: 'Assess breathing pattern, check ABG, evaluate for cause of tachypnea',
+        category: 'guideline',
+      })
+    } else if (rr.value > 20) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'warning',
+        headline: `Respiratory Rate elevated: ${rr.display} ${rr.unit}`,
+        detail: `RR of ${rr.value} is above normal range (12-20 br/min). Monitor closely for worsening.`,
+        source: 'NEWS2 Clinical Guidelines',
+        suggestedAction: 'Re-check RR in 1 hour, assess respiratory effort',
+        category: 'guideline',
+      })
+    }
+  }
+
+  // --- SpO2 ---
+  const spo2 = getLatest('spo')
+  if (spo2) {
+    if (spo2.value < 92) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'critical',
+        headline: `SpO₂ critically low: ${spo2.display}${spo2.unit}`,
+        detail: `Oxygen saturation of ${spo2.value}% is below 92%. Risk of tissue hypoxia and organ damage. Supplemental oxygen and urgent evaluation required.`,
+        source: 'BTS Oxygen Guidelines, NEWS2',
+        suggestedAction: 'Apply supplemental O₂, target SpO₂ 94-98%, escalate if not improving',
+        category: 'guideline',
+      })
+    } else if (spo2.value < 95) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'warning',
+        headline: `SpO₂ below normal: ${spo2.display}${spo2.unit}`,
+        detail: `Oxygen saturation of ${spo2.value}% is below normal range (95-100%). Monitor trend and consider supplemental oxygen.`,
+        source: 'BTS Oxygen Guidelines',
+        suggestedAction: 'Monitor SpO₂ continuously, assess respiratory status',
+        category: 'guideline',
+      })
+    }
+  }
+
+  // --- Temperature ---
+  const temp = getLatest('temperature')
+  if (temp) {
+    if (temp.value >= 40) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'critical',
+        headline: `Hyperthermia: ${temp.display} ${temp.unit}`,
+        detail: `Temperature of ${temp.value}°C is dangerously elevated. Risk of febrile seizures and organ damage. Consider sepsis workup and active cooling measures.`,
+        source: 'Surviving Sepsis Campaign Guidelines',
+        suggestedAction: 'Blood cultures, start empiric antibiotics if sepsis suspected, active cooling',
+        category: 'guideline',
+      })
+    } else if (temp.value > 37.2) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'warning',
+        headline: `Fever: ${temp.display} ${temp.unit}`,
+        detail: `Temperature of ${temp.value}°C is above normal (36.1-37.2°C). Investigate source of fever.`,
+        source: 'Clinical Practice Guidelines',
+        suggestedAction: 'Assess for infection source, consider antipyretics if symptomatic',
+        category: 'guideline',
+      })
+    } else if (temp.value < 35) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'critical',
+        headline: `Hypothermia: ${temp.display} ${temp.unit}`,
+        detail: `Temperature of ${temp.value}°C indicates hypothermia. Risk of cardiac arrhythmias and coagulopathy.`,
+        source: 'Clinical Practice Guidelines',
+        suggestedAction: 'Active rewarming, continuous cardiac monitoring, check coagulation',
+        category: 'guideline',
+      })
+    }
+  }
+
+  // --- Heart Rate ---
+  const hr = getLatest('heart')
+  if (hr) {
+    if (hr.value >= 130 || hr.value < 40) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'critical',
+        headline: hr.value >= 130 ? `Severe tachycardia: ${hr.display} ${hr.unit}` : `Severe bradycardia: ${hr.display} ${hr.unit}`,
+        detail: hr.value >= 130
+          ? `Heart rate of ${hr.value} bpm far exceeds normal (60-100). Assess for hemodynamic compromise, arrhythmia, or underlying cause.`
+          : `Heart rate of ${hr.value} bpm is critically low. Assess for heart block, medication effect, or vagal cause.`,
+        source: 'AHA/ACC Guidelines',
+        suggestedAction: hr.value >= 130 ? 'ECG, assess hemodynamic stability, identify and treat cause' : 'ECG, assess perfusion, review medications, consider atropine/pacing',
+        category: 'guideline',
+      })
+    } else if (hr.value > 100 || hr.value < 60) {
+      insights.push({
+        id: `local-vital-${idx++}`,
+        severity: 'warning',
+        headline: hr.value > 100 ? `Tachycardia: ${hr.display} ${hr.unit}` : `Bradycardia: ${hr.display} ${hr.unit}`,
+        detail: `Heart rate of ${hr.value} bpm is outside normal range (60-100 bpm).`,
+        source: 'Clinical Practice Guidelines',
+        suggestedAction: 'Assess symptoms, review medications, consider ECG',
+        category: 'guideline',
+      })
+    }
+  }
+
+  // --- Blood Pressure (systolic from display value) ---
+  const bp = summary.vitals.find(g => g.label.toLowerCase().includes('blood pressure'))
+  if (bp && bp.readings.length > 0) {
+    const bpStr = bp.readings[0].displayValue
+    const match = bpStr.match(/(\d+)\s*\/\s*(\d+)/)
+    if (match) {
+      const systolic = parseInt(match[1], 10)
+      const diastolic = parseInt(match[2], 10)
+      if (systolic >= 180 || diastolic >= 120) {
+        insights.push({
+          id: `local-vital-${idx++}`,
+          severity: 'critical',
+          headline: `Hypertensive urgency: ${bpStr} mmHg`,
+          detail: `Blood pressure of ${bpStr} indicates hypertensive urgency/emergency. Assess for end-organ damage (headache, chest pain, visual changes).`,
+          source: 'AHA/ACC 2017 Hypertension Guidelines',
+          suggestedAction: 'Assess for target organ damage, consider IV antihypertensive if emergency',
+          category: 'guideline',
+        })
+      } else if (systolic < 90 || diastolic < 60) {
+        insights.push({
+          id: `local-vital-${idx++}`,
+          severity: 'critical',
+          headline: `Hypotension: ${bpStr} mmHg`,
+          detail: `Blood pressure of ${bpStr} indicates hypotension. Assess for shock, hemorrhage, dehydration, or medication effect.`,
+          source: 'Surviving Sepsis Campaign Guidelines',
+          suggestedAction: 'IV fluid bolus, assess perfusion, identify cause, consider vasopressors',
+          category: 'guideline',
+        })
+      }
+    }
+  }
+
+  // Return max 3, prioritizing critical over warning
+  insights.sort((a, b) => {
+    if (a.severity === b.severity) return 0
+    return a.severity === 'critical' ? -1 : 1
+  })
+  return insights.slice(0, 3)
+}
+
 export function analyzeLabTrendsLocally(summary: PatientClinicalSummary): LabTrend[] {
   const trends: LabTrend[] = []
 
@@ -287,14 +461,18 @@ export async function analyzeClinicalData(
   // Always compute local lab trends (no AI needed)
   const localTrends = analyzeLabTrendsLocally(summary)
 
+  // Always compute local vitals alerts — critical safety net
+  const localVitalsInsights = generateLocalVitalsInsights(summary)
+
   // If AI is not configured, return local-only results
   if (!isAIConfigured()) {
+    const allClear = localVitalsInsights.length === 0 && localTrends.every(t => !t.outOfRange)
     return {
-      insights: [],
+      insights: localVitalsInsights,
       labTrends: localTrends,
-      allClear: localTrends.every(t => !t.outOfRange),
+      allClear,
       tokenUsage: null,
-      error: 'OpenAI API key not configured. Set VITE_OPENAI_API_KEY in .env to enable AI insights.',
+      error: localVitalsInsights.length > 0 ? null : 'OpenAI API key not configured. Set VITE_OPENAI_API_KEY in .env to enable AI insights.',
     }
   }
 
@@ -317,10 +495,11 @@ export async function analyzeClinicalData(
     try {
       parsed = JSON.parse(response.content)
     } catch {
+      const allClear = localVitalsInsights.length === 0 && localTrends.every(t => !t.outOfRange)
       return {
-        insights: [],
+        insights: localVitalsInsights,
         labTrends: localTrends,
-        allClear: localTrends.every(t => !t.outOfRange),
+        allClear,
         tokenUsage: { prompt: response.usage.promptTokens, completion: response.usage.completionTokens, total: response.usage.totalTokens },
         error: 'AI returned invalid JSON. Using local analysis only.',
       }
@@ -361,10 +540,18 @@ export async function analyzeClinicalData(
       return local
     })
 
-    const allClear = insights.length === 0 && mergedTrends.every(t => !t.outOfRange)
+    // Merge: AI insights first, then local vital alerts not already covered by AI
+    const aiHeadlinesLower = new Set(insights.map(i => i.headline.toLowerCase()))
+    const uniqueLocalInsights = localVitalsInsights.filter(
+      li => !aiHeadlinesLower.has(li.headline.toLowerCase()) &&
+            !insights.some(ai => ai.headline.toLowerCase().includes(li.headline.split(':')[0].toLowerCase())),
+    )
+    const mergedInsights = [...insights, ...uniqueLocalInsights].slice(0, 3)
+
+    const allClear = mergedInsights.length === 0 && mergedTrends.every(t => !t.outOfRange)
 
     return {
-      insights,
+      insights: mergedInsights,
       labTrends: mergedTrends,
       allClear,
       tokenUsage: {
@@ -375,12 +562,13 @@ export async function analyzeClinicalData(
       error: null,
     }
   } catch (err) {
+    const allClear = localVitalsInsights.length === 0 && localTrends.every(t => !t.outOfRange)
     return {
-      insights: [],
+      insights: localVitalsInsights,
       labTrends: localTrends,
-      allClear: localTrends.every(t => !t.outOfRange),
+      allClear,
       tokenUsage: null,
-      error: `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: localVitalsInsights.length > 0 ? null : `AI analysis failed: ${err instanceof Error ? err.message : String(err)}`,
     }
   }
 }
