@@ -18,6 +18,7 @@ import { SectionCard } from '../../components/SectionCard'
 import { BriefingSkeleton } from '../../components/BriefingSkeleton'
 import { isAIConfigured } from '../../services/ai/openaiPlatform'
 import { getVitalStatus, type VitalType } from '../../services/fhir/observations'
+import { PatientTrajectory } from '../trajectory/PatientTrajectory'
 import type { NEWS2Result } from '../../utils/risk-scores/news2'
 import {
   IconAlert,
@@ -117,6 +118,11 @@ export function PatientBriefing() {
           onOpenNotes={() => setNotePanelOpen(true)}
           noteAvailable={!!data.clinicalSummary}
         />
+
+        {/* ═══ PATIENT TRAJECTORY ═══ */}
+        {data.hasVitals && (
+          <PatientTrajectory data={data} />
+        )}
 
         {/* ═══ AI ALERTS ═══ */}
         <AlertsSection data={data} tier2Loading={tier2Loading} />
