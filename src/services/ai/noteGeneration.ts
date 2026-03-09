@@ -112,7 +112,7 @@ STRICT RULES:
 4. Use standard medical abbreviations.
 5. Keep the note concise but complete — aim for what fits on one screen.
 6. Do NOT include patient identifiers (name, MRN, DOB) — those are in the EHR banner.
-7. Include today's date/time at the top.
+7. Do NOT write a date/time line — the application will prepend the current date automatically.
 8. End with "This note was AI-assisted and requires practitioner review and attestation."
 9. Return ONLY the note text — no JSON wrapping, no markdown formatting.`
 
@@ -249,10 +249,12 @@ export async function generateClinicalNote(
       },
     )
 
+    const now = new Date()
+    const dateStamp = `DATE/TIME: ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     return {
-      content: response.content.trim(),
+      content: dateStamp + '\n' + response.content.trim(),
       format,
-      generatedAt: new Date().toISOString(),
+      generatedAt: now.toISOString(),
       tokenUsage: {
         prompt: response.usage.promptTokens,
         completion: response.usage.completionTokens,
@@ -311,10 +313,15 @@ export async function generateClinicalNoteStream(
       },
     )
 
+    const now = new Date()
+    const dateStamp = `DATE/TIME: ${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    const finalContent = dateStamp + '\n' + response.content.trim()
+    // Emit the prepended date to the streaming UI too
+    onChunk(finalContent)
     return {
-      content: response.content.trim(),
+      content: finalContent,
       format,
-      generatedAt: new Date().toISOString(),
+      generatedAt: now.toISOString(),
       tokenUsage: {
         prompt: response.usage.promptTokens,
         completion: response.usage.completionTokens,
