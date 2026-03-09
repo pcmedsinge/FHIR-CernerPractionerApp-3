@@ -16,6 +16,7 @@ import { isAIConfigured } from '../../services/ai/openaiPlatform'
 import { streamCopilotResponse, type CopilotContext } from '../../services/copilot/copilotService'
 import { getContextualPrompts, getFollowUpPrompts, type PromptCard } from './copilotPrompts'
 import { getVitalStatus } from '../../services/fhir/observations'
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 import { CopilotMessage, type CopilotMessageData } from './CopilotMessage'
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,7 @@ export function ClinicalCopilot({ data, loading }: ClinicalCopilotProps) {
   const [askedIds, setAskedIds] = useState<Set<string>>(new Set())
   const chatEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const speech = useSpeechRecognition()
 
   const contextualPrompts = useMemo(() => getContextualPrompts(data), [data])
   const followUps = useMemo(() => getFollowUpPrompts(askedIds, data), [askedIds, data])
@@ -195,6 +197,28 @@ export function ClinicalCopilot({ data, loading }: ClinicalCopilotProps) {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Sync speech transcript → input field in real-time
+  useEffect(() => {
+    if (speech.listening && speech.transcript) {
+      setInput(speech.transcript)
+    }
+  }, [speech.listening, speech.transcript])
+
+  // ── Voice toggle ──────────────────────────────────────────────────
+
+  const handleMicToggle = useCallback(() => {
+    if (speech.listening) {
+      const finalText = speech.stop()
+      if (finalText) {
+        setInput(finalText)
+        inputRef.current?.focus()
+      }
+    } else {
+      setInput('')
+      speech.start()
+    }
+  }, [speech])
 
   // ── Send message ─────────────────────────────────────────────────
 
@@ -411,6 +435,22 @@ export function ClinicalCopilot({ data, loading }: ClinicalCopilotProps) {
 
       {/* ── Input bar (always pinned to bottom) ── */}
       <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-2.5">
+        {/* Listening indicator */}
+        {speech.listening && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-100 max-w-3xl mx-auto">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+            <span className="text-[11px] font-medium text-red-600">Listening…</span>
+            <span className="text-[11px] text-red-400 truncate flex-1">{speech.transcript || 'Speak now'}</span>
+            <button
+              type="button"
+              className="text-[10px] text-red-400 hover:text-red-600 bg-transparent border-none cursor-pointer"
+              onClick={() => speech.cancel()}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-3xl mx-auto">
           {hasMessages && (
             <button
@@ -427,12 +467,42 @@ export function ClinicalCopilot({ data, loading }: ClinicalCopilotProps) {
           <input
             ref={inputRef}
             type="text"
-            className="flex-1 px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-[13px] text-slate-800 placeholder-slate-400 outline-none focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all"
-            placeholder={hasContext ? 'Ask about this patient…' : 'Waiting for clinical data…'}
+            className={`flex-1 px-4 py-2.5 rounded-lg border text-[13px] text-slate-800 placeholder-slate-400 outline-none transition-all ${
+              speech.listening
+                ? 'border-red-300 bg-red-50/30 ring-2 ring-red-100'
+                : 'border-slate-200 bg-slate-50 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100'
+            }`}
+            placeholder={speech.listening ? 'Listening…' : hasContext ? 'Ask about this patient…' : 'Waiting for clinical data…'}
             value={input}
             onChange={e => setInput(e.target.value)}
             disabled={!hasContext || streaming}
           />
+          {/* Mic button — only shown if browser supports it */}
+          {speech.supported && (
+            <button
+              type="button"
+              className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center cursor-pointer transition-all duration-200 ${
+                speech.listening
+                  ? 'bg-red-500 text-white shadow-md shadow-red-200 hover:bg-red-600 scale-110'
+                  : 'bg-white border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50'
+              }`}
+              onClick={handleMicToggle}
+              disabled={!hasContext || streaming}
+              title={speech.listening ? 'Stop listening' : 'Voice input'}
+            >
+              {speech.listening ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z" />
+                  <path d="M19 10v2a7 7 0 01-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              )}
+            </button>
+          )}
           <button
             type="submit"
             className="shrink-0 w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center cursor-pointer hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
