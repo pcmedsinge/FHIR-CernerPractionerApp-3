@@ -92,38 +92,6 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
     const SR = getSpeechRecognition()
     if (!SR) return
 
-    // Pre-check: request mic access via getUserMedia first.
-    // This is required in some browsers/contexts to "unlock" the mic
-    // before SpeechRecognition can use it.
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      // Release the stream immediately — we just needed the permission grant
-      stream.getTracks().forEach(t => t.stop())
-    } catch (err) {
-      const mediaErr = err as DOMException
-
-      // Enumerate devices for diagnostics
-      let deviceInfo = ''
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        const audioInputs = devices.filter(d => d.kind === 'audioinput')
-        deviceInfo = audioInputs.length === 0
-          ? ' Browser sees 0 audio input devices.'
-          : ` Browser sees ${audioInputs.length} input(s): ${audioInputs.map(d => d.label || 'unlabeled').join(', ')}.`
-      } catch { /* ignore */ }
-
-      if (mediaErr.name === 'NotAllowedError') {
-        setError('Microphone permission denied. Click the lock/site-settings icon in the address bar → allow microphone.')
-      } else if (mediaErr.name === 'NotFoundError') {
-        setError(`No audio input device found.${deviceInfo} Check Windows Settings → Sound → Input and ensure your mic is selected. Also try using http://localhost instead of 127.0.0.1.`)
-      } else {
-        setError(`Microphone access failed (${mediaErr.name}): ${mediaErr.message}.${deviceInfo}`)
-      }
-      console.warn('[SpeechRecognition] getUserMedia failed:', mediaErr.name, mediaErr.message, deviceInfo)
-      setListening(false)
-      return
-    }
-
     // Stop any existing session
     if (recognitionRef.current) {
       try { recognitionRef.current.abort() } catch { /* ignore */ }
@@ -159,17 +127,31 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
       setTranscript(final + interim)
     }
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+    recognition.onerror = async (event: SpeechRecognitionErrorEvent) => {
+      console.warn('[SpeechRecognition] error:', event.error, event.message)
+
+      // Gather device diagnostics for mic-related errors
+      let deviceInfo = ''
+      if (event.error === 'audio-capture' || event.error === 'not-allowed') {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          const audioInputs = devices.filter(d => d.kind === 'audioinput')
+          deviceInfo = audioInputs.length === 0
+            ? ' Browser sees 0 audio input devices.'
+            : ` Browser sees ${audioInputs.length} input(s): ${audioInputs.map(d => d.label || 'unlabeled').join(', ')}.`
+          console.warn('[SpeechRecognition] devices:', deviceInfo)
+        } catch { /* ignore */ }
+      }
+
       const ERROR_MESSAGES: Record<string, string> = {
-        'not-allowed': 'Microphone permission denied. Check browser settings.',
-        'no-speech': 'No speech detected. Try speaking louder.',
-        'audio-capture': 'No microphone found. Check your audio input device.',
+        'not-allowed': `Microphone permission denied. Click the lock icon in the address bar → allow microphone.${deviceInfo}`,
+        'no-speech': 'No speech detected. Try speaking louder or closer to the mic.',
+        'audio-capture': `Mic not accessible.${deviceInfo} Check Windows Settings → Privacy → Microphone → ensure Chrome is allowed. Also check Sound → Input device.`,
         'network': 'Network error. Speech recognition requires an internet connection.',
         'service-not-allowed': 'Speech service not available in this browser.',
       }
 
       const msg = ERROR_MESSAGES[event.error] || `Speech error: ${event.error}`
-      console.warn('[SpeechRecognition] error:', event.error, event.message)
 
       if (event.error !== 'aborted') {
         setError(msg)
@@ -187,6 +169,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
       recognition.start()
     } catch (err) {
       console.warn('[SpeechRecognition] start failed:', err)
+      setError('Failed to start speech recognition. Please try again.')
       setListening(false)
     }
   }, [])
