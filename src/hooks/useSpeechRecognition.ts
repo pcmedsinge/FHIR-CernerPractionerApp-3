@@ -101,13 +101,25 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
       stream.getTracks().forEach(t => t.stop())
     } catch (err) {
       const mediaErr = err as DOMException
+
+      // Enumerate devices for diagnostics
+      let deviceInfo = ''
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const audioInputs = devices.filter(d => d.kind === 'audioinput')
+        deviceInfo = audioInputs.length === 0
+          ? ' Browser sees 0 audio input devices.'
+          : ` Browser sees ${audioInputs.length} input(s): ${audioInputs.map(d => d.label || 'unlabeled').join(', ')}.`
+      } catch { /* ignore */ }
+
       if (mediaErr.name === 'NotAllowedError') {
-        setError('Microphone permission denied. Click the lock icon in the address bar → allow microphone.')
+        setError('Microphone permission denied. Click the lock/site-settings icon in the address bar → allow microphone.')
       } else if (mediaErr.name === 'NotFoundError') {
-        setError('No microphone found. Check that your headphone mic is selected as input device in system audio settings.')
+        setError(`No audio input device found.${deviceInfo} Check Windows Settings → Sound → Input and ensure your mic is selected. Also try using http://localhost instead of 127.0.0.1.`)
       } else {
-        setError(`Microphone access failed: ${mediaErr.message}`)
+        setError(`Microphone access failed (${mediaErr.name}): ${mediaErr.message}.${deviceInfo}`)
       }
+      console.warn('[SpeechRecognition] getUserMedia failed:', mediaErr.name, mediaErr.message, deviceInfo)
       setListening(false)
       return
     }
