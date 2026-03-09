@@ -90,7 +90,7 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[280px] h-[280px] shrink-0">
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-[240px] h-[240px] shrink-0">
         {/* Concentric rings */}
         {rings.map((ring, i) => (
           <polygon
@@ -169,7 +169,7 @@ export function BodySystemRadar({ systems }: BodySystemRadarProps) {
       </svg>
 
       {/* Legend + system list */}
-      <div className="flex flex-col gap-2 w-full max-w-[340px]">
+      <div className="flex flex-col gap-2 w-full max-w-[280px]">
         {/* Legend */}
         <div className="flex items-center gap-4 mb-1.5">
           <span className="flex items-center gap-2 text-[11px] text-slate-500">

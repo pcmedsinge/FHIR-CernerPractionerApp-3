@@ -5,7 +5,7 @@
  * Clicking opens a centered full-screen overlay with proper real estate.
  *
  * SEQUENCE (practitioner mental model):
- * 1. Body System Radar — "Which systems are at risk NOW?"
+ * 1. Acuity Drivers — "What's driving the score?"
  * 2. Predictive Insights — "What should I do about it?"
  * 3. Acuity Timeline — "How did we get here?" (temporal detail)
  *
@@ -17,7 +17,7 @@ import type { BriefingData } from '../../hooks/usePatientBriefing'
 import { computeTrajectory, type TrajectoryData } from '../../services/trajectory/trajectoryEngine'
 import { getTrajectoryPredictions, type PredictionCard } from '../../services/trajectory/trajectoryPredictions'
 import { AcuityTimeline } from './AcuityTimeline'
-import { BodySystemRadar } from './BodySystemRadar'
+import { AcuityDrivers } from './AcuityDrivers'
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -74,9 +74,9 @@ function AcuityGauge({ value, label }: { value: number; label: string }) {
   const ring = value >= 70 ? 'border-red-200 bg-red-50' : value >= 45 ? 'border-amber-200 bg-amber-50' : value >= 20 ? 'border-slate-200 bg-slate-50' : 'border-emerald-200 bg-emerald-50'
 
   return (
-    <div className={`flex flex-col items-center justify-center w-[88px] h-[88px] rounded-full border-2 ${ring}`}>
-      <span className={`text-[28px] font-black leading-none ${color}`}>{value}</span>
-      <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mt-0.5">{label}</span>
+    <div className={`flex flex-col items-center justify-center w-[68px] h-[68px] rounded-full border-2 ${ring}`}>
+      <span className={`text-[22px] font-black leading-none ${color}`}>{value}</span>
+      <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider mt-0.5">{label}</span>
     </div>
   )
 }
@@ -197,13 +197,13 @@ export function PatientTrajectory({ data }: PatientTrajectoryProps) {
           />
 
           {/* Overlay Panel */}
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-6 px-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
             <div
-              className="bg-white rounded-2xl shadow-modal w-full max-w-6xl animate-modal-in"
+              className="bg-white rounded-2xl shadow-modal w-full max-w-6xl animate-modal-in flex flex-col max-h-[calc(100vh-24px)] overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
               {/* ── Overlay Header ── */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 shrink-0">
                 <div className="flex items-center gap-4">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-600">
                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -241,12 +241,12 @@ export function PatientTrajectory({ data }: PatientTrajectoryProps) {
               </div>
 
               {/* ── SECTION 1: Body Systems + Predictive Insights (side by side) ── */}
-              <div className="px-6 pt-5 pb-4">
-                <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-6">
-                  {/* Left: Body System Radar */}
+              <div className="px-5 pt-3 pb-2 flex-1 min-h-0">
+                <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-5">
+                  {/* Left: Acuity Drivers */}
                   <div>
-                    <SectionHeader number="1" title="Body Systems" subtitle="Current state vs 12 hours ago" />
-                    <BodySystemRadar systems={trajectory.systems} />
+                    <SectionHeader number="1" title="Acuity Drivers" subtitle="What's driving the score" />
+                    <AcuityDrivers drivers={trajectory.drivers} totalAcuity={trajectory.currentAcuity} />
                   </div>
 
                   {/* Right: Predictive Insights */}
@@ -277,10 +277,10 @@ export function PatientTrajectory({ data }: PatientTrajectoryProps) {
                 </div>
               </div>
 
-              <div className="border-t border-slate-100 mx-6" />
+              <div className="border-t border-slate-100 mx-5 shrink-0" />
 
               {/* ── SECTION 2: Acuity Timeline (full width) ── */}
-              <div className="px-6 pt-4 pb-3">
+              <div className="px-5 pt-2 pb-1 shrink-0">
                 <SectionHeader number="3" title="Acuity Timeline" subtitle="Composite acuity index over 60 hours with severity bands" />
                 <AcuityTimeline
                   history={trajectory.history}
@@ -290,9 +290,9 @@ export function PatientTrajectory({ data }: PatientTrajectoryProps) {
               </div>
 
               {/* ── Footer disclaimer ── */}
-              <div className="px-6 pb-4 pt-2">
-                <p className="text-[11px] text-slate-400 m-0 leading-relaxed bg-slate-50 rounded-lg px-4 py-2.5">
-                  <span className="font-semibold text-slate-500">Note:</span> History is synthetically generated from current vital-sign anchor points. In production, this would use full FHIR observation history. Predictions are AI-assisted estimates — always apply clinical judgment.
+              <div className="px-5 pb-3 pt-1 shrink-0">
+                <p className="text-[11px] text-slate-400 m-0 leading-relaxed bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="font-semibold text-slate-500">Note:</span> Trajectory based on current vital-sign anchors. Predictions are forward-looking estimates — always apply clinical judgment.
                 </p>
               </div>
             </div>

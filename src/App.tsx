@@ -67,15 +67,15 @@ function AuthenticatedApp() {
       </button>
       <button
         type="button"
-        className={`px-3 py-1 rounded-md text-[11px] font-semibold border-none cursor-pointer transition-all duration-150 flex items-center gap-1.5 ${
+        className={`px-3 py-1 rounded-md text-[11px] font-bold border-none cursor-pointer transition-all duration-150 flex items-center gap-1.5 ${
           activeTab === 'copilot'
-            ? 'bg-white/15 text-white shadow-sm'
-            : 'bg-transparent text-slate-400 hover:text-white'
+            ? 'bg-gradient-to-r from-violet-500/25 to-blue-500/20 text-white shadow-sm ring-1 ring-white/10'
+            : 'bg-transparent text-violet-300 hover:text-white'
         }`}
         onClick={() => setActiveTab('copilot')}
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
         </svg>
         AI Copilot
       </button>

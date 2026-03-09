@@ -50,6 +50,21 @@ export interface BodySystemScore {
   delta: number
 }
 
+export interface AcuityDriver {
+  /** Human-readable label (e.g. "Systolic BP") */
+  label: string
+  /** Current value display (e.g. "209 mmHg") */
+  value: string
+  /** Normal reference display (e.g. "96–140") */
+  reference: string
+  /** Points contributed to acuity score */
+  points: number
+  /** Category for color-coding */
+  category: 'vital' | 'risk' | 'condition' | 'insight'
+  /** Severity level for the driver */
+  severity: 'critical' | 'warning' | 'moderate' | 'normal'
+}
+
 export interface TrajectoryData {
   /** Historical timeline (48h), newest last */
   history: TimelinePoint[]
@@ -59,6 +74,8 @@ export interface TrajectoryData {
   currentAcuity: number
   /** Body system radar scores */
   systems: BodySystemScore[]
+  /** Acuity score breakdown — what's driving the number */
+  drivers: AcuityDriver[]
   /** Trend direction for the heading */
   trend: 'improving' | 'stable' | 'worsening' | 'critical'
   /** Current acuity severity label */
@@ -153,6 +170,150 @@ function computeCurrentAcuity(data: BriefingData): number {
   const insightBonus = criticalInsights * 6 + warningInsights * 3
 
   return Math.min(vitalScore + riskBonus + conditionBonus + insightBonus, 100)
+}
+
+// ---------------------------------------------------------------------------
+// Acuity Drivers — expose what's driving the score
+// ---------------------------------------------------------------------------
+
+const VITAL_LABELS: Record<string, { label: string; unit: string }> = {
+  heartRate:       { label: 'Heart Rate',       unit: 'bpm' },
+  systolicBp:      { label: 'Systolic BP',      unit: 'mmHg' },
+  respiratoryRate: { label: 'Respiratory Rate',  unit: '/min' },
+  spo2:            { label: 'SpO₂',             unit: '%' },
+  temperature:     { label: 'Temperature',       unit: '°C' },
+}
+
+function computeAcuityDrivers(data: BriefingData): AcuityDriver[] {
+  const drivers: AcuityDriver[] = []
+  const vitals = data.vitals
+  const totalWeight = Object.values(VITAL_NORMS).reduce((s, n) => s + n.weight, 0)
+
+  // --- Vital sign drivers ---
+  const vitalEntries: Array<[string, number | null]> = [
+    ['heartRate', vitals.heartRate],
+    ['systolicBp', vitals.systolicBp],
+    ['respiratoryRate', vitals.respiratoryRate],
+    ['spo2', vitals.spo2],
+    ['temperature', vitals.temperature],
+  ]
+
+  for (const [key, val] of vitalEntries) {
+    if (val == null) continue
+    const norm = VITAL_NORMS[key]!
+    const meta = VITAL_LABELS[key]!
+    const dev = vitalDeviation(val, key)
+
+    let contribution: number
+    if (key === 'spo2') {
+      contribution = val < norm.mid ? dev * norm.weight : 0
+    } else {
+      contribution = dev * norm.weight
+    }
+
+    // Normalize same way as computeAcuityFromVitals: (contribution/totalWeight)*33
+    const normalizedPts = totalWeight > 0 ? Math.round((contribution / totalWeight) * 33 * 10) / 10 : 0
+
+    if (normalizedPts > 0) {
+      const severity: AcuityDriver['severity'] = normalizedPts >= 10 ? 'critical' : normalizedPts >= 5 ? 'warning' : normalizedPts >= 2 ? 'moderate' : 'normal'
+      const lo = Math.round((norm.mid - norm.halfRange) * 10) / 10
+      const hi = Math.round((norm.mid + norm.halfRange) * 10) / 10
+      drivers.push({
+        label: meta.label,
+        value: `${key === 'temperature' ? val.toFixed(1) : Math.round(val)} ${meta.unit}`,
+        reference: `${lo}–${hi} ${meta.unit}`,
+        points: normalizedPts,
+        category: 'vital',
+        severity,
+      })
+    }
+  }
+
+  // --- Risk score drivers ---
+  const rs = data.riskScores
+  if (rs.news2 && rs.news2.total > 0) {
+    const pts = Math.min(rs.news2.total * 3, 25)
+    drivers.push({
+      label: 'NEWS2 Score',
+      value: `${rs.news2.total}`,
+      reference: '0–4 low risk',
+      points: pts,
+      category: 'risk',
+      severity: pts >= 15 ? 'critical' : pts >= 9 ? 'warning' : 'moderate',
+    })
+  }
+  if (rs.qsofa?.sepsisRisk) {
+    drivers.push({
+      label: 'qSOFA Sepsis Risk',
+      value: 'Positive',
+      reference: 'Negative',
+      points: 15,
+      category: 'risk',
+      severity: 'critical',
+    })
+  }
+  if (rs.ascvd && rs.ascvd.riskPercent > 20) {
+    drivers.push({
+      label: '10yr ASCVD Risk',
+      value: `${rs.ascvd.riskPercent.toFixed(1)}%`,
+      reference: '< 20%',
+      points: 8,
+      category: 'risk',
+      severity: 'warning',
+    })
+  }
+  if (rs.cha2ds2vasc && rs.cha2ds2vasc.score >= 4) {
+    drivers.push({
+      label: 'CHA₂DS₂-VASc',
+      value: `${rs.cha2ds2vasc.score}`,
+      reference: '< 4',
+      points: 5,
+      category: 'risk',
+      severity: 'moderate',
+    })
+  }
+
+  // --- Condition severity driver ---
+  if (data.maxSeverity === 'critical' || data.maxSeverity === 'high' || data.maxSeverity === 'moderate') {
+    const pts = data.maxSeverity === 'critical' ? 12 : data.maxSeverity === 'high' ? 8 : 4
+    drivers.push({
+      label: 'Condition Severity',
+      value: data.maxSeverity.charAt(0).toUpperCase() + data.maxSeverity.slice(1),
+      reference: 'Low / None',
+      points: pts,
+      category: 'condition',
+      severity: data.maxSeverity === 'critical' ? 'critical' : data.maxSeverity === 'high' ? 'warning' : 'moderate',
+    })
+  }
+
+  // --- Insight drivers ---
+  const criticalInsights = data.insights.filter(i => i.severity === 'critical').length
+  const warningInsights = data.insights.filter(i => i.severity === 'warning').length
+  if (criticalInsights > 0) {
+    drivers.push({
+      label: 'Critical Alerts',
+      value: `${criticalInsights} active`,
+      reference: '0',
+      points: criticalInsights * 6,
+      category: 'insight',
+      severity: 'critical',
+    })
+  }
+  if (warningInsights > 0) {
+    drivers.push({
+      label: 'Warning Alerts',
+      value: `${warningInsights} active`,
+      reference: '0',
+      points: warningInsights * 3,
+      category: 'insight',
+      severity: 'warning',
+    })
+  }
+
+  // Sort by points descending — highest contributors first
+  drivers.sort((a, b) => b.points - a.points)
+
+  return drivers
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +554,7 @@ export function computeTrajectory(data: BriefingData): TrajectoryData {
   const history = generateHistory(currentAcuity, now)
   const prediction = generatePrediction(history, now)
   const systems = computeBodySystems(data)
+  const drivers = computeAcuityDrivers(data)
   const trend = getTrend(currentAcuity, prediction)
   const severityLabel = getSeverityLabel(currentAcuity)
 
@@ -401,6 +563,7 @@ export function computeTrajectory(data: BriefingData): TrajectoryData {
     prediction,
     currentAcuity,
     systems,
+    drivers,
     trend,
     severityLabel,
   }

@@ -27,6 +27,7 @@ import {
   IconBrain,
   IconWarning,
   IconNote,
+  IconTrend,
   VITAL_ICON,
 } from '../../components/icons/ClinicalIcons'
 
@@ -124,18 +125,20 @@ export function PatientBriefing() {
           <PatientTrajectory data={data} />
         )}
 
-        {/* ═══ AI ALERTS ═══ */}
-        <AlertsSection data={data} tier2Loading={tier2Loading} />
+        {/* ═══ CLINICAL ALERTS ═══ */}
+        <SectionCard title="Clinical Alerts" icon={<IconWarning size={16} className="text-red-500" />}>
+          <AlertsSection data={data} tier2Loading={tier2Loading} />
+        </SectionCard>
 
         {/* ═══ RISK SCORES ═══ */}
-        <SectionCard title="Risk Scores" icon={<IconAlert size={14} />}>
+        <SectionCard title="Risk Scores" icon={<IconAlert size={16} className="text-amber-500" />}>
           <RiskScoresContent data={data} />
         </SectionCard>
 
         {/* ═══ VITALS ═══ */}
         <SectionCard
           title="Vitals"
-          icon={<VITAL_ICON.heartRate size={14} />}
+          icon={<VITAL_ICON.heartRate size={16} className="text-rose-500" />}
           subtitle={data.hasVitals ? undefined : 'No vitals recorded'}
           flush
         >
@@ -146,7 +149,7 @@ export function PatientBriefing() {
 
         {/* ═══ LAB TRENDS ═══ */}
         {data.labTrends.length > 0 && (
-          <SectionCard title="Lab Trends" subtitle={`${data.labTrends.length} tracked`}>
+          <SectionCard title="Lab Trends" icon={<IconTrend size={16} className="text-purple-500" />} subtitle={`${data.labTrends.length} tracked`}>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
               {data.labTrends.map(trend => (
                 <LabTrendChart key={trend.labName} trend={trend} />
@@ -280,7 +283,7 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
   // Still loading Tier 2
   if (tier2Loading && !data.aiError) {
     return (
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl shadow-card">
+      <div className="flex items-center gap-3 py-1">
         <div className="w-4 h-4 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spinner shrink-0" />
         <div className="flex flex-col gap-0.5">
           <span className="text-[13px] font-medium text-slate-600">Analyzing clinical data…</span>
@@ -293,9 +296,9 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
   // AI error (but no insights from local fallback either)
   if (data.aiError && !data.allClear) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl shadow-card">
+      <div className="flex items-center gap-2">
         <IconWarning size={14} className="text-amber-500 shrink-0" />
-        <p className="text-[11px] text-slate-500 m-0">AI unavailable: {data.aiError}</p>
+        <p className="text-[11px] text-slate-500 m-0">AI analysis unavailable: {data.aiError}</p>
       </div>
     )
   }
@@ -303,7 +306,7 @@ function AlertsSection({ data, tier2Loading }: { data: BriefingData; tier2Loadin
   // All Clear
   if (data.allClear) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-card">
+      <div className="flex items-center gap-2">
         <IconCheckCircle size={14} className="text-green-500" />
         <p className="text-[11px] text-slate-600 m-0 font-medium">
           No critical alerts
@@ -462,9 +465,13 @@ function VitalsAccordion({
         className="w-full flex items-center justify-between px-3 py-2 bg-white text-left cursor-pointer hover:bg-slate-50 transition-colors duration-150 border-none"
         onClick={onToggle}
       >
-        <span className="text-[13px] font-semibold text-slate-700 flex items-center gap-2">
-          <span className="text-[10px] text-slate-400">{expanded ? '▼' : '▶'}</span>
+        <span className="text-[14px] font-bold text-slate-700 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-500 shrink-0">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
           Vitals History
+          <span className="text-[10px] text-slate-400 font-normal">{expanded ? '▼' : '▶'}</span>
         </span>
         <span className="text-[11px] text-slate-400">
           {expanded ? 'Collapse' : 'Full history & recording'}

@@ -43,8 +43,8 @@ export function SectionCard({
       {/* Header bar */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-card-border">
         <div className="flex items-center gap-2 min-w-0">
-          {icon && <span className="text-slate-400 shrink-0 flex items-center">{icon}</span>}
-          <h3 className="text-[13px] font-semibold text-slate-700 m-0 truncate">
+          {icon && <span className="shrink-0 flex items-center">{icon}</span>}
+          <h3 className="text-[14px] font-bold text-slate-700 m-0 truncate">
             {title}
           </h3>
           {subtitle && (

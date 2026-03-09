@@ -20,8 +20,8 @@ interface AcuityTimelineProps {
 
 // Chart dimensions — wider for overlay, taller for readability
 const W = 960
-const H = 260
-const PAD = { top: 24, right: 28, bottom: 36, left: 48 }
+const H = 180
+const PAD = { top: 20, right: 28, bottom: 28, left: 48 }
 const CW = W - PAD.left - PAD.right
 const CH = H - PAD.top - PAD.bottom
 
