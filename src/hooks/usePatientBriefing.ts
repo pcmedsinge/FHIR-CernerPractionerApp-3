@@ -245,72 +245,8 @@ export function usePatientBriefing(): UsePatientBriefingResult {
   const aiDataVersion = useRef(0)
   const dataVersion = useRef(0)
 
-  // ── TIER 1: fast critical path ──────────────────────────────────────────
-
-  const fetchTier1 = useCallback(async (): Promise<{
-    vitals: VitalsSnapshot
-    vitalGroups: VitalSignGroup[]
-    riskScores: RiskScores
-    maxSeverity: PatientClinicalData['maxSeverity']
-    conditionFlags: string[]
-    hasVitals: boolean
-    practitionerName: string
-  } | null> => {
-    const token = session?.accessToken
-    const patientId = session?.patientId
-    const practId = session?.practitionerId
-    if (!token || !patientId) return null
-
-    // Determine what needs re-fetching
-    const needDemo = !isFresh(demoCache.current, STALE_DEMOGRAPHICS)
-    const needConditions = !isFresh(conditionsCache.current, STALE_CONDITIONS)
-    const needVitals = !isFresh(vitalsCache.current, STALE_VITALS)
-    const needPract = !isFresh(practNameCache.current, Infinity)
-
-    // Only fetch stale data
-    const [practResult, vitalsResult, conditionsResult, demoResult] = await Promise.allSettled([
-      needPract && practId
-        ? getPractitioner(practId, token).then(p => getPractitionerDisplayName(p))
-        : Promise.resolve(practNameCache.current?.data ?? 'Unknown Practitioner'),
-      needVitals
-        ? getVitalSigns(patientId, token)
-        : Promise.resolve(vitalsCache.current!.data),
-      needConditions
-        ? getPatientConditions(patientId, token)
-        : Promise.resolve(conditionsCache.current!.data),
-      needDemo
-        ? getPatientDemographics(patientId, token)
-        : Promise.resolve(demoCache.current!.data),
-    ])
-
-    if (!mountedRef.current) return null
-
-    const now = Date.now()
-
-    const practName = practResult.status === 'fulfilled'
-      ? practResult.value
-      : 'Practitioner'
-    practNameCache.current = { data: practName, fetchedAt: now }
-
-    const vitalGroups = vitalsResult.status === 'fulfilled' ? vitalsResult.value : (vitalsCache.current?.data ?? [])
-    if (vitalsResult.status === 'fulfilled') vitalsCache.current = { data: vitalGroups, fetchedAt: now }
-
-    const conditions = conditionsResult.status === 'fulfilled' ? conditionsResult.value : (conditionsCache.current?.data ?? DEFAULT_CONDITIONS)
-    if (conditionsResult.status === 'fulfilled') conditionsCache.current = { data: conditions, fetchedAt: now }
-
-    const demographics = demoResult.status === 'fulfilled' ? demoResult.value : (demoCache.current?.data ?? { age: '?', gender: 'unknown' })
-    if (demoResult.status === 'fulfilled') demoCache.current = { data: demographics, fetchedAt: now }
-
-    const vitals = extractVitalsSnapshot(vitalGroups)
-    const riskScores = computeRiskScores(vitals, demographics, conditions)
-    const maxSeverity = resolveMaxSeverity(riskScores)
-    const conditionFlags = extractConditionFlags(conditions)
-    const hasVitals = vitalGroups.some(g => g.readings.length > 0)
-
-    return { vitals, vitalGroups, riskScores, maxSeverity, conditionFlags, hasVitals, practitionerName: practName }
-  }, [session])
-
-  // ── TIER 2: background AI fuel + analysis ───────────────────────────────
+  // ── TIER 2 (standalone): re-fetch meds/allergies/labs + re-run AI ─────
+  // Used only by reanalyze(). The main loadAll() merges everything.
 
   const fetchTier2 = useCallback(async (tier1VitalGroups: VitalSignGroup[], tier1Conditions: PatientConditions) => {
     const token = session?.accessToken
@@ -322,7 +258,6 @@ export function usePatientBriefing(): UsePatientBriefingResult {
     const currentVersion = dataVersion.current
 
     try {
-      // Fetch only stale Tier 2 resources
       const needMeds = !isFresh(medsCache.current, STALE_MEDS_ALLERGY)
       const needAllergies = !isFresh(allergiesCache.current, STALE_MEDS_ALLERGY)
       const needLabs = !isFresh(labsCache.current, STALE_LABS)
@@ -350,7 +285,6 @@ export function usePatientBriefing(): UsePatientBriefingResult {
       if (labsResult.status === 'fulfilled' && needLabs) labsCache.current = { data: labs, fetchedAt: now }
       if (labsResult.status === 'rejected') errors.push(`Labs: ${String(labsResult.reason)}`)
 
-      // Build comprehensive summary for AI
       let populatedCategories = 0
       if (tier1VitalGroups.length > 0) populatedCategories++
       if (tier1Conditions.conditions.length > 0) populatedCategories++
@@ -359,24 +293,14 @@ export function usePatientBriefing(): UsePatientBriefingResult {
       if (labs.length > 0) populatedCategories++
 
       const summary: PatientClinicalSummary = {
-        vitals: tier1VitalGroups,
-        conditions: tier1Conditions,
-        medications,
-        allergies,
-        labs,
+        vitals: tier1VitalGroups, conditions: tier1Conditions,
+        medications, allergies, labs,
         meta: { fetchedAt: new Date(now).toISOString(), errors, populatedCategories },
       }
 
-      // ── FAST: render local lab trends immediately (no AI needed) ───
       const localTrends = analyzeLabTrendsLocally(summary)
-      setData(prev => prev ? {
-        ...prev,
-        labTrends: localTrends,
-        summaryMeta: summary.meta,
-        clinicalSummary: summary,
-      } : prev)
+      setData(prev => prev ? { ...prev, labTrends: localTrends, summaryMeta: summary.meta, clinicalSummary: summary } : prev)
 
-      // ── ASYNC: run AI analysis for insight cards ──────────────────
       let analysis: ClinicalAnalysisResult
       if (aiCache.current && aiDataVersion.current === currentVersion) {
         analysis = aiCache.current.data
@@ -399,51 +323,186 @@ export function usePatientBriefing(): UsePatientBriefingResult {
       } : prev)
     } catch (err) {
       if (!mountedRef.current) return
-      setData(prev => prev ? {
-        ...prev,
-        aiError: err instanceof Error ? err.message : 'Analysis failed',
-      } : prev)
+      setData(prev => prev ? { ...prev, aiError: err instanceof Error ? err.message : 'Analysis failed' } : prev)
     } finally {
       if (mountedRef.current) setTier2Loading(false)
     }
   }, [session])
 
-  // ── Orchestrator: runs both tiers ─────────────────────────────────────
+  // ── Orchestrator: fires ALL FHIR calls in ONE parallel batch ──────────
+  //
+  // Before:  [T1: 11 calls] ──wait── [T2: 3 calls] ──wait── [AI]
+  // After:   [ALL: 14 calls in parallel] ──paint T1── [AI]   (~3-5s saved)
+  //
 
   const loadAll = useCallback(async () => {
     setError(null)
     setTier1Loading(true)
 
-    try {
-      const tier1 = await fetchTier1()
-      if (!tier1 || !mountedRef.current) return
+    const token = session?.accessToken
+    const patientId = session?.patientId
+    const practId = session?.practitionerId
+    if (!token || !patientId) {
+      setError('No session available')
+      setTier1Loading(false)
+      return
+    }
 
-      // Render Tier 1 immediately
+    const t0 = performance.now()
+
+    try {
+      // ── Determine what's stale ──────────────────────────────────────
+      const needPract = !isFresh(practNameCache.current, Infinity)
+      const needDemo = !isFresh(demoCache.current, STALE_DEMOGRAPHICS)
+      const needVitals = !isFresh(vitalsCache.current, STALE_VITALS)
+      const needConditions = !isFresh(conditionsCache.current, STALE_CONDITIONS)
+      const needMeds = !isFresh(medsCache.current, STALE_MEDS_ALLERGY)
+      const needAllergies = !isFresh(allergiesCache.current, STALE_MEDS_ALLERGY)
+      const needLabs = !isFresh(labsCache.current, STALE_LABS)
+
+      // ── Fire ALL FHIR calls in one parallel batch ───────────────────
+      const [practR, vitalsR, conditionsR, demoR, medsR, allergiesR, labsR] =
+        await Promise.allSettled([
+          // Tier 1 resources
+          needPract && practId
+            ? getPractitioner(practId, token).then(p => getPractitionerDisplayName(p))
+            : Promise.resolve(practNameCache.current?.data ?? 'Unknown Practitioner'),
+          needVitals
+            ? getVitalSigns(patientId, token)
+            : Promise.resolve(vitalsCache.current!.data),
+          needConditions
+            ? getPatientConditions(patientId, token)
+            : Promise.resolve(conditionsCache.current!.data),
+          needDemo
+            ? getPatientDemographics(patientId, token)
+            : Promise.resolve(demoCache.current!.data),
+          // Tier 2 resources — fired SIMULTANEOUSLY (no more waiting for T1)
+          needMeds
+            ? getPatientMedications(patientId, token)
+            : Promise.resolve(medsCache.current!.data),
+          needAllergies
+            ? getPatientAllergies(patientId, token)
+            : Promise.resolve(allergiesCache.current!.data),
+          needLabs
+            ? getPatientLabs(patientId, token)
+            : Promise.resolve(labsCache.current!.data),
+        ])
+
+      if (!mountedRef.current) return
+
+      const tFHIR = performance.now()
+      console.log(`[Briefing] ⚡ All FHIR calls resolved in ${(tFHIR - t0).toFixed(0)}ms`)
+
+      const now = Date.now()
+
+      // ── Update ALL caches ───────────────────────────────────────────
+      const practName = practR.status === 'fulfilled' ? practR.value : 'Practitioner'
+      practNameCache.current = { data: practName, fetchedAt: now }
+
+      const vitalGroups = vitalsR.status === 'fulfilled' ? vitalsR.value : (vitalsCache.current?.data ?? [])
+      if (vitalsR.status === 'fulfilled') vitalsCache.current = { data: vitalGroups, fetchedAt: now }
+
+      const conditions = conditionsR.status === 'fulfilled' ? conditionsR.value : (conditionsCache.current?.data ?? DEFAULT_CONDITIONS)
+      if (conditionsR.status === 'fulfilled') conditionsCache.current = { data: conditions, fetchedAt: now }
+
+      const demographics = demoR.status === 'fulfilled' ? demoR.value : (demoCache.current?.data ?? { age: '?', gender: 'unknown' })
+      if (demoR.status === 'fulfilled') demoCache.current = { data: demographics, fetchedAt: now }
+
+      const medications = medsR.status === 'fulfilled' ? medsR.value : (medsCache.current?.data ?? [])
+      if (medsR.status === 'fulfilled' && needMeds) medsCache.current = { data: medications, fetchedAt: now }
+
+      const allergies = allergiesR.status === 'fulfilled' ? allergiesR.value : (allergiesCache.current?.data ?? [])
+      if (allergiesR.status === 'fulfilled' && needAllergies) allergiesCache.current = { data: allergies, fetchedAt: now }
+
+      const labs = labsR.status === 'fulfilled' ? labsR.value : (labsCache.current?.data ?? [])
+      if (labsR.status === 'fulfilled' && needLabs) labsCache.current = { data: labs, fetchedAt: now }
+
+      // ── Compute Tier 1 & paint IMMEDIATELY ──────────────────────────
+      const vitals = extractVitalsSnapshot(vitalGroups)
+      const riskScores = computeRiskScores(vitals, demographics, conditions)
+      const maxSeverity = resolveMaxSeverity(riskScores)
+      const conditionFlags = extractConditionFlags(conditions)
+      const hasVitals = vitalGroups.some(g => g.readings.length > 0)
+
+      // Build clinical summary (all data already available — no second round trip!)
+      const errors: string[] = []
+      if (medsR.status === 'rejected') errors.push(`Medications: ${String(medsR.reason)}`)
+      if (allergiesR.status === 'rejected') errors.push(`Allergies: ${String(allergiesR.reason)}`)
+      if (labsR.status === 'rejected') errors.push(`Labs: ${String(labsR.reason)}`)
+
+      let populatedCategories = 0
+      if (vitalGroups.length > 0) populatedCategories++
+      if (conditions.conditions.length > 0) populatedCategories++
+      if (medications.length > 0) populatedCategories++
+      if (allergies.length > 0) populatedCategories++
+      if (labs.length > 0) populatedCategories++
+
+      const summary: PatientClinicalSummary = {
+        vitals: vitalGroups, conditions, medications, allergies, labs,
+        meta: { fetchedAt: new Date(now).toISOString(), errors, populatedCategories },
+      }
+
+      const localTrends = analyzeLabTrendsLocally(summary)
+
+      // Paint T1 + local lab trends
       setData(prev => ({
-        // Preserve existing Tier 2 data while Tier 1 refreshes
         insights: prev?.insights ?? [],
-        labTrends: prev?.labTrends ?? [],
-        allClear: prev?.allClear ?? false,  // never claim "all clear" before AI runs
+        labTrends: localTrends,
+        allClear: prev?.allClear ?? false,
         aiError: prev?.aiError ?? null,
         tokenUsage: prev?.tokenUsage ?? null,
-        summaryMeta: prev?.summaryMeta ?? null,
-        clinicalSummary: prev?.clinicalSummary ?? null,
-        // Tier 1 fresh
-        ...tier1,
+        summaryMeta: summary.meta,
+        clinicalSummary: summary,
+        vitals, vitalGroups, riskScores, maxSeverity, conditionFlags, hasVitals,
+        practitionerName: practName,
       }))
       setTier1Loading(false)
+      console.log(`[Briefing] 🎨 Tier 1 painted at ${(performance.now() - t0).toFixed(0)}ms`)
 
-      // Fire Tier 2 in background (non-blocking for UI)
-      void fetchTier2(
-        vitalsCache.current?.data ?? [],
-        conditionsCache.current?.data ?? DEFAULT_CONDITIONS,
-      )
+      // ── Fire AI analysis (non-blocking for T1 render) ───────────────
+      void (async () => {
+        setTier2Loading(true)
+        dataVersion.current++
+        const currentVersion = dataVersion.current
+
+        try {
+          let analysis: ClinicalAnalysisResult
+          if (aiCache.current && aiDataVersion.current === currentVersion) {
+            analysis = aiCache.current.data
+          } else {
+            const tAI = performance.now()
+            analysis = await analyzeClinicalData(summary)
+            console.log(`[Briefing] 🤖 AI analysis in ${(performance.now() - tAI).toFixed(0)}ms`)
+            if (!mountedRef.current || currentVersion !== dataVersion.current) return
+            aiCache.current = { data: analysis, fetchedAt: Date.now() }
+            aiDataVersion.current = currentVersion
+          }
+
+          setData(prev => prev ? {
+            ...prev,
+            insights: analysis.insights,
+            labTrends: analysis.labTrends.length > 0 ? analysis.labTrends : localTrends,
+            allClear: analysis.allClear,
+            aiError: analysis.error,
+            tokenUsage: analysis.tokenUsage,
+          } : prev)
+        } catch (err) {
+          if (!mountedRef.current) return
+          setData(prev => prev ? { ...prev, aiError: err instanceof Error ? err.message : 'Analysis failed' } : prev)
+        } finally {
+          if (mountedRef.current) {
+            setTier2Loading(false)
+            console.log(`[Briefing] ✅ Total load: ${(performance.now() - t0).toFixed(0)}ms`)
+          }
+        }
+      })()
     } catch (err) {
       if (!mountedRef.current) return
       setError(err instanceof Error ? err.message : 'Failed to load clinical data')
       setTier1Loading(false)
+      setTier2Loading(false)
     }
-  }, [fetchTier1, fetchTier2])
+  }, [session])
 
   // ── Mount: initial load + 5-min polling ─────────────────────────────────
 

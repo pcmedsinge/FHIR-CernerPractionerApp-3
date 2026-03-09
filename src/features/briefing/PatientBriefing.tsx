@@ -528,8 +528,8 @@ function NoteSlideOut({
             ✕
           </button>
         </div>
-        {/* NotePanel content */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {/* NotePanel content — flex so textarea can fill remaining space */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto scrollbar-thin">
           <NotePanel
             summary={data.clinicalSummary}
             insights={data.insights}

@@ -156,7 +156,7 @@ function nextLink(bundle: ObservationBundle): string | null {
 }
 
 async function fetchBundle(url: string, token: string, signal: AbortSignal): Promise<ObservationBundle> {
-  return fhirFetch<ObservationBundle>(url, token, { signal, timeout: 0 })
+  return fhirFetch<ObservationBundle>(url, token, { signal, timeout: 15_000 })
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +183,7 @@ export async function getVitalSigns(
   accessToken: string,
   opts: GetVitalSignsOptions = {},
 ): Promise<VitalSignGroup[]> {
+  const t0 = performance.now()
   const baseUrl = import.meta.env.VITE_FHIR_BASE_URL.replace(/\/$/, '')
   const LATEST_COUNT = 5
 
@@ -197,9 +198,9 @@ export async function getVitalSigns(
         `${baseUrl}/Observation?patient=${encodeURIComponent(patientId)}&code=${codeParam}&_sort=-date&_count=${count}`
 
       try {
-        console.log(`[getVitalSigns] Querying ${type}: ${url}`)
+        const t0 = performance.now()
         const bundle = await fetchBundle(url, accessToken, opts.signal ?? new AbortController().signal)
-        console.log(`[getVitalSigns] ${type}: ${bundle.entry?.length ?? 0} entries returned`)
+        console.log(`[Vitals] ${type}: ${bundle.entry?.length ?? 0} entries in ${(performance.now() - t0).toFixed(0)}ms`)
 
         const readings: VitalReading[] = []
         const seen = new Set<string>()
@@ -229,12 +230,13 @@ export async function getVitalSigns(
         opts.onGroup?.(group)
       } catch (e) {
         // Individual type failures are non-fatal — the card just shows "No data"
-        console.error(`[getVitalSigns] ❌ ${type} query failed:`, e)
+        console.warn(`[Vitals] ❌ ${type} failed:`, e)
       }
     },
   )
 
   await Promise.allSettled(fetches)
+  console.log(`[Vitals] All 8 types resolved in ${(performance.now() - t0).toFixed(0)}ms`)
 
   // Return in consistent order
   const ORDER: VitalType[] = [

@@ -25,6 +25,7 @@ import type { PatientClinicalSummary } from '../../services/fhir/patientSummary'
 import type { ClinicalInsight, LabTrend } from '../../services/ai/clinicalAnalysis'
 import type { RiskScores } from '../../types/app'
 import { IconNote, IconCheckCircle, IconWarning, IconRefresh } from '../../components/icons/ClinicalIcons'
+import { NotePreview } from './NotePreview'
 
 // ---------------------------------------------------------------------------
 // Format labels
@@ -81,6 +82,7 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
   const [copied, setCopied] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [history, setHistory] = useState<NoteHistoryEntry[]>([])
+  const [editMode, setEditMode] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Load history on mount
@@ -302,27 +304,37 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
 
   return (
     <section className={wrapperClass}>
-      {/* Header */}
-      <div className={`flex items-center justify-between px-3 py-2 border-b ${isSlideOut ? 'border-card-border bg-white' : 'border-inherit bg-inherit'}`}>
-        <button
-          type="button"
-          className="flex items-center gap-2 bg-transparent border-none cursor-pointer text-left p-0"
-          onClick={() => { if (status === 'idle') setExpanded(false); else setExpanded(e => !e) }}
-        >
-          <IconNote size={14} className={
-            status === 'error' ? 'text-red-500' :
-            status === 'generating' ? 'text-blue-600' :
-            status === 'saved' ? 'text-green-600' :
-            'text-slate-600'
-          } />
-          <span className="text-[12px] font-semibold text-slate-700">
-            Smart Notes
-            {status === 'generating' && <span className="ml-1.5 text-blue-600 font-normal">Generating…</span>}
-            {status === 'ready' && <span className="ml-1.5 text-green-600 font-normal">Ready</span>}
-            {status === 'edited' && <span className="ml-1.5 text-amber-600 font-normal">Edited</span>}
-            {status === 'saved' && <span className="ml-1.5 text-green-600 font-normal">Saved to EHR</span>}
+      {/* Header — in slide-out mode, skip the title (outer panel already has it) */}
+      <div className={`flex items-center ${isSlideOut ? 'justify-end' : 'justify-between'} px-3 py-2 border-b ${isSlideOut ? 'border-card-border bg-white' : 'border-inherit bg-inherit'}`}>
+        {!isSlideOut && (
+          <button
+            type="button"
+            className="flex items-center gap-2 bg-transparent border-none cursor-pointer text-left p-0"
+            onClick={() => { if (status === 'idle') setExpanded(false); else setExpanded(e => !e) }}
+          >
+            <IconNote size={14} className={
+              status === 'error' ? 'text-red-500' :
+              status === 'generating' ? 'text-blue-600' :
+              status === 'saved' ? 'text-green-600' :
+              'text-slate-600'
+            } />
+            <span className="text-[12px] font-semibold text-slate-700">
+              Smart Notes
+              {status === 'generating' && <span className="ml-1.5 text-blue-600 font-normal">Generating…</span>}
+              {status === 'ready' && <span className="ml-1.5 text-green-600 font-normal">Ready</span>}
+              {status === 'edited' && <span className="ml-1.5 text-amber-600 font-normal">Edited</span>}
+              {status === 'saved' && <span className="ml-1.5 text-green-600 font-normal">Saved to EHR</span>}
+            </span>
+          </button>
+        )}
+        {isSlideOut && status !== 'idle' && (
+          <span className="text-[11px] font-medium mr-auto">
+            {status === 'generating' && <span className="text-blue-600">Generating…</span>}
+            {status === 'ready' && <span className="text-green-600">Ready</span>}
+            {status === 'edited' && <span className="text-amber-600">Edited</span>}
+            {status === 'saved' && <span className="text-green-600">Saved to EHR</span>}
           </span>
-        </button>
+        )}
         <div className="flex items-center gap-1.5">
           {/* Format selector */}
           <div className="flex border border-card-border rounded-md overflow-hidden">
@@ -443,16 +455,51 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
         </div>
       )}
 
-      {/* Note content (editable) */}
+      {/* Note content — preview or edit mode */}
       {noteContent && !generating && (
-        <div className={`flex flex-col ${isSlideOut ? 'flex-1' : ''}`}>
-          <textarea
-            ref={textareaRef}
-            className={`w-full px-4 py-3 text-[13px] leading-relaxed text-slate-800 bg-transparent border-none outline-none resize-none overflow-y-auto ${isSlideOut ? 'flex-1 min-h-[300px]' : 'h-48'}`}
-            value={noteContent}
-            onChange={e => handleContentChange(e.target.value)}
-            spellCheck
-          />
+        <div className={`flex flex-col ${isSlideOut ? 'flex-1 min-h-0' : ''}`}>
+          {/* Preview/Edit toggle */}
+          <div className={`flex items-center gap-1 px-3 py-1.5 border-b ${isSlideOut ? 'border-card-border' : 'border-inherit'} bg-slate-50`}>
+            <button
+              type="button"
+              className={`px-2.5 py-0.5 rounded text-[11px] font-medium border-none cursor-pointer transition-colors duration-100 ${
+                !editMode ? 'bg-white text-slate-700 shadow-sm' : 'bg-transparent text-slate-400 hover:text-slate-600'
+              }`}
+              onClick={() => setEditMode(false)}
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              className={`px-2.5 py-0.5 rounded text-[11px] font-medium border-none cursor-pointer transition-colors duration-100 ${
+                editMode ? 'bg-white text-slate-700 shadow-sm' : 'bg-transparent text-slate-400 hover:text-slate-600'
+              }`}
+              onClick={() => setEditMode(true)}
+            >
+              Edit
+            </button>
+            {status === 'edited' && (
+              <span className="text-[10px] text-amber-500 font-medium ml-auto">Unsaved edits</span>
+            )}
+          </div>
+
+          {/* Preview mode — rich structured view */}
+          {!editMode && (
+            <div className={`px-4 py-3 overflow-y-auto ${isSlideOut ? 'flex-1' : 'max-h-72'}`}>
+              <NotePreview content={noteContent} />
+            </div>
+          )}
+
+          {/* Edit mode — raw textarea */}
+          {editMode && (
+            <textarea
+              ref={textareaRef}
+              className={`w-full px-4 py-3 text-[13px] leading-relaxed text-slate-800 bg-white border-none outline-none resize-none overflow-y-auto ${isSlideOut ? 'flex-1' : 'h-64'}`}
+              value={noteContent}
+              onChange={e => handleContentChange(e.target.value)}
+              spellCheck
+            />
+          )}
 
           {/* Action bar */}
           <div className="flex items-center justify-between px-3 py-2 border-t border-inherit bg-inherit">
