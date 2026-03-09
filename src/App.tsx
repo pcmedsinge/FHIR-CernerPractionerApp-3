@@ -1,8 +1,11 @@
+import { useState } from 'react'
 import { useAuth } from './auth/AuthProvider'
 import { hasSmartLaunchParams } from './auth/launch'
 import { AppShell } from './components/AppShell'
 import { usePatientContext } from './components/PatientBanner'
 import { PatientBriefing } from './features/briefing/PatientBriefing'
+import { ClinicalCopilot } from './features/copilot/ClinicalCopilot'
+import { usePatientBriefing } from './hooks/usePatientBriefing'
 
 function App() {
   const { status, error } = useAuth()
@@ -47,11 +50,54 @@ function App() {
 /** Authenticated shell — uses hooks that depend on session context */
 function AuthenticatedApp() {
   const { headerLabel } = usePatientContext()
+  const [activeTab, setActiveTab] = useState<'briefing' | 'copilot'>('briefing')
+
+  const tabNav = (
+    <div className="flex items-center gap-0.5 bg-slate-700/50 rounded-lg p-0.5">
+      <button
+        type="button"
+        className={`px-3 py-1 rounded-md text-[11px] font-semibold border-none cursor-pointer transition-all duration-150 ${
+          activeTab === 'briefing'
+            ? 'bg-white/15 text-white shadow-sm'
+            : 'bg-transparent text-slate-400 hover:text-white'
+        }`}
+        onClick={() => setActiveTab('briefing')}
+      >
+        Briefing
+      </button>
+      <button
+        type="button"
+        className={`px-3 py-1 rounded-md text-[11px] font-semibold border-none cursor-pointer transition-all duration-150 flex items-center gap-1.5 ${
+          activeTab === 'copilot'
+            ? 'bg-white/15 text-white shadow-sm'
+            : 'bg-transparent text-slate-400 hover:text-white'
+        }`}
+        onClick={() => setActiveTab('copilot')}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+        </svg>
+        AI Copilot
+      </button>
+    </div>
+  )
 
   return (
-    <AppShell title="PractitionerHub" patientLabel={headerLabel ?? undefined}>
-      <PatientBriefing />
+    <AppShell title="PractitionerHub" patientLabel={headerLabel ?? undefined} navItems={tabNav}>
+      {activeTab === 'briefing' && <PatientBriefing />}
+      {activeTab === 'copilot' && <CopilotTab />}
     </AppShell>
+  )
+}
+
+/** Copilot tab — calls usePatientBriefing which reads from sessionStorage cache */
+function CopilotTab() {
+  const briefing = usePatientBriefing()
+  return (
+    <ClinicalCopilot
+      data={briefing.data}
+      loading={briefing.tier1Loading || briefing.tier2Loading}
+    />
   )
 }
 
