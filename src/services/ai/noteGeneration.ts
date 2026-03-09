@@ -77,13 +77,15 @@ PLAN:
 
   ap: `You are a clinical documentation assistant. Generate a concise Assessment & Plan note from the provided patient data.
 
-Structure the note as a numbered problem list:
+Structure the note EXACTLY as:
 
-For each active clinical problem:
+ASSESSMENT & PLAN:
+(numbered problem list, one entry per active clinical problem)
+
+For each problem:
 1. [Problem Name] — brief assessment including relevant data
    - Plan: concrete next steps
 
-End with:
 MONITORING: Key parameters to track
 FOLLOW-UP: Recommended timing`,
 

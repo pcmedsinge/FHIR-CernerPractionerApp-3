@@ -249,6 +249,26 @@ export function ClinicalCopilot({ data, loading }: ClinicalCopilotProps) {
 
       {/* Input bar */}
       <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
+        {/* Compact chips row — visible when conversation is active and prompts toggled on */}
+        {messages.length > 0 && showPrompts && hasContext && (
+          <div className="mb-2.5 flex flex-wrap gap-1.5">
+            {contextualPrompts.map(chip => {
+              const meta = CATEGORY_META[chip.category]
+              return (
+                <button
+                  key={chip.id}
+                  type="button"
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-medium border cursor-pointer transition-all duration-150 hover:shadow-sm hover:scale-[1.02] active:scale-[0.98] ${meta.color}`}
+                  onClick={() => handleChipClick(chip)}
+                  disabled={streaming}
+                >
+                  {chip.label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
           {messages.length > 0 && (
             <button
@@ -281,7 +301,7 @@ export function ClinicalCopilot({ data, loading }: ClinicalCopilotProps) {
             </svg>
           </button>
         </form>
-        {messages.length > 0 && !showPrompts && (
+        {messages.length > 0 && (
           <button
             type="button"
             className="mt-2 text-[10px] text-slate-400 hover:text-blue-500 bg-transparent border-none cursor-pointer transition-colors"
