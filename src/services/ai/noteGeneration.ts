@@ -16,7 +16,7 @@
  *   - Flag critical items prominently within the note body
  */
 
-import { chatCompletion, isAIConfigured } from './openaiPlatform'
+import { chatCompletion, chatCompletionStream, isAIConfigured } from './openaiPlatform'
 import type { PatientClinicalSummary } from '../fhir/patientSummary'
 import type { ClinicalInsight, LabTrend } from './clinicalAnalysis'
 import type { RiskScores } from '../../types/app'
@@ -246,6 +246,68 @@ export async function generateClinicalNote(
       {
         temperature: 0.3,
         maxTokens: 2000,
+      },
+    )
+
+    return {
+      content: response.content.trim(),
+      format,
+      generatedAt: new Date().toISOString(),
+      tokenUsage: {
+        prompt: response.usage.promptTokens,
+        completion: response.usage.completionTokens,
+        total: response.usage.totalTokens,
+      },
+      error: null,
+    }
+  } catch (err) {
+    return {
+      content: '',
+      format,
+      generatedAt: new Date().toISOString(),
+      tokenUsage: null,
+      error: `Note generation failed: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+}
+
+/**
+ * Streaming variant — calls `onChunk` with each text delta as it arrives.
+ * Resolves with the final GeneratedNote once the stream completes.
+ *
+ * @param onChunk — called with (accumulated text so far) on each delta
+ */
+export async function generateClinicalNoteStream(
+  summary: PatientClinicalSummary,
+  insights: ClinicalInsight[],
+  labTrends: LabTrend[],
+  riskScores: RiskScores,
+  format: NoteFormat = 'soap',
+  onChunk: (accumulated: string) => void,
+): Promise<GeneratedNote> {
+  if (!isAIConfigured()) {
+    return {
+      content: '',
+      format,
+      generatedAt: new Date().toISOString(),
+      tokenUsage: null,
+      error: 'OpenAI API key not configured. Set VITE_OPENAI_API_KEY in .env to enable note generation.',
+    }
+  }
+
+  try {
+    const userPrompt = buildNotePrompt(summary, insights, labTrends, riskScores)
+    const systemPrompt = FORMAT_PROMPTS[format] + '\n' + BASE_RULES
+
+    const response = await chatCompletionStream(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      (_delta, accumulated) => onChunk(accumulated),
+      {
+        temperature: 0.3,
+        maxTokens: 1200,
       },
     )
 

@@ -13,7 +13,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
 import {
-  generateClinicalNote,
+  generateClinicalNoteStream,
   saveNoteToHistory,
   getNoteHistory,
   type NoteFormat,
@@ -99,8 +99,17 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
     setError(null)
     setSaveMessage(null)
     setCopied(false)
+    setEditMode(false)
+    setNoteContent('')
+    setExpanded(true)
 
-    const result = await generateClinicalNote(summary, insights, labTrends, riskScores, format)
+    const result = await generateClinicalNoteStream(
+      summary, insights, labTrends, riskScores, format,
+      (accumulated) => {
+        // Progressive update — show text as it streams in
+        setNoteContent(accumulated)
+      },
+    )
 
     if (result.error) {
       setError(result.error)
@@ -110,7 +119,6 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
       setOriginalContent(result.content)
       setGeneratedFormat(format)
       setStatus('ready')
-      setExpanded(true)
 
       // Auto-save to local history
       const entry: NoteHistoryEntry = {
@@ -438,12 +446,25 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
         </div>
       )}
 
-      {/* Generating skeleton */}
+      {/* Generating skeleton — shown only briefly before first chunk arrives */}
       {generating && !noteContent && (
         <div className="px-4 py-6 flex flex-col items-center gap-2">
           <div className="w-5 h-5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spinner" />
           <span className="text-sm text-blue-700 font-medium">Drafting {FORMAT_OPTIONS.find(f => f.value === format)?.desc ?? 'note'}…</span>
           <span className="text-[10px] text-blue-400">Synthesizing vitals, labs, medications, and risk scores</span>
+        </div>
+      )}
+
+      {/* Streaming preview — show text as it arrives from the AI */}
+      {generating && noteContent && (
+        <div className={`flex flex-col ${isSlideOut ? 'flex-1 min-h-0' : ''}`}>
+          <div className={`px-4 py-3 overflow-y-auto ${isSlideOut ? 'flex-1' : 'max-h-72'}`}>
+            <NotePreview content={noteContent} />
+            <div className="flex items-center gap-2 mt-3 pt-2 border-t border-blue-100">
+              <div className="w-3 h-3 border-[1.5px] border-blue-200 border-t-blue-600 rounded-full animate-spinner" />
+              <span className="text-[11px] text-blue-500 font-medium">Writing…</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -455,7 +476,7 @@ export function NotePanel({ summary, insights, labTrends, riskScores, dataLoadin
         </div>
       )}
 
-      {/* Note content — preview or edit mode */}
+      {/* Note content — preview or edit mode (only after generation completes) */}
       {noteContent && !generating && (
         <div className={`flex flex-col ${isSlideOut ? 'flex-1 min-h-0' : ''}`}>
           {/* Preview/Edit toggle */}

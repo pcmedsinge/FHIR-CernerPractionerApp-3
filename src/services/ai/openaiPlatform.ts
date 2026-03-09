@@ -165,3 +165,112 @@ async function fetchWithRetry(
     clearTimeout(timer)
   }
 }
+
+// ---------------------------------------------------------------------------
+// Streaming API — SSE-based streaming for real-time token delivery
+// ---------------------------------------------------------------------------
+
+/**
+ * Send a streaming chat completion request to OpenAI.
+ * Calls `onChunk` with each content delta as it arrives.
+ * Returns the full assembled content + approximate usage when finished.
+ */
+export async function chatCompletionStream(
+  messages: ChatMessage[],
+  onChunk: (delta: string, accumulated: string) => void,
+  options?: {
+    temperature?: number
+    maxTokens?: number
+  },
+): Promise<OpenAIResponse> {
+  const config = getOpenAIConfig()
+  if (!config) throw new Error('OpenAI API key not configured. Set VITE_OPENAI_API_KEY in .env')
+
+  await waitForSlot()
+  _activeRequests++
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`,
+    }
+    if (config.orgId) headers['OpenAI-Organization'] = config.orgId
+
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      temperature: options?.temperature ?? 0.3,
+      stream: true,
+    }
+    if (options?.maxTokens) body.max_tokens = options.maxTokens
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 60_000) // longer for streaming
+
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`OpenAI API error ${res.status}: ${text.slice(0, 200)}`)
+      }
+
+      const reader = res.body?.getReader()
+      if (!reader) throw new Error('No response body for streaming')
+
+      const decoder = new TextDecoder()
+      let accumulated = ''
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Process complete SSE lines
+        const lines = buffer.split('\n')
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed === 'data: [DONE]') continue
+          if (!trimmed.startsWith('data: ')) continue
+
+          try {
+            const json = JSON.parse(trimmed.slice(6)) as {
+              choices?: Array<{ delta?: { content?: string } }>
+            }
+            const delta = json.choices?.[0]?.delta?.content
+            if (delta) {
+              accumulated += delta
+              onChunk(delta, accumulated)
+            }
+          } catch {
+            // Skip malformed SSE chunks
+          }
+        }
+      }
+
+      return {
+        content: accumulated,
+        usage: {
+          // Streaming API doesn't return usage in chunks; estimate
+          promptTokens: 0,
+          completionTokens: Math.ceil(accumulated.length / 4),
+          totalTokens: Math.ceil(accumulated.length / 4),
+        },
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  } finally {
+    _activeRequests--
+  }
+}
