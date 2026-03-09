@@ -63,7 +63,7 @@ function AuthenticatedApp() {
         }`}
         onClick={() => setActiveTab('briefing')}
       >
-        Briefing
+        Chart Review
       </button>
       <button
         type="button"
