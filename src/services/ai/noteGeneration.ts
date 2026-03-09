@@ -79,12 +79,11 @@ PLAN:
 
 Structure the note EXACTLY as:
 
-ASSESSMENT & PLAN:
-(numbered problem list, one entry per active clinical problem)
+ASSESSMENT:
+(Clinical synthesis — connect the dots between vitals, labs, conditions, and risk scores. Number each active problem with a brief assessment including relevant data.)
 
-For each problem:
-1. [Problem Name] — brief assessment including relevant data
-   - Plan: concrete next steps
+PLAN:
+(Concrete, actionable plan items corresponding to each assessment problem. Include monitoring recommendations, medication adjustments to consider, follow-up timing.)
 
 MONITORING: Key parameters to track
 FOLLOW-UP: Recommended timing`,
